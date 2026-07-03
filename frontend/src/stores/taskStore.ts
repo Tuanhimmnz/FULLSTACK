@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
-import { type Task, type Project, type User, type Notification, type PublishedEvent, type ActivityLog } from '../services/mockData';
+import { type Task, type Project, type User, type UserCredential, type Notification, type PublishedEvent, type ActivityLog } from '../services/mockData';
 import { apiService } from '../services/api';
 
 export const useTaskStore = defineStore('taskStore', () => {
@@ -9,11 +9,16 @@ export const useTaskStore = defineStore('taskStore', () => {
   const tasks = ref<Task[]>([]);
   const notifications = ref<Notification[]>([]);
   const activityLogs = ref<ActivityLog[]>([]);
+  const userCredentials = ref<UserCredential[]>([]);
   const currentUser = ref<User>({} as User);
+  const projectServiceOnline = ref(true);
+  const taskServiceOnline = ref(true);
+  const notifyServiceOnline = ref(true);
   
   // Event Hub states
   const events = ref<PublishedEvent[]>([]);
   const toasts = ref<{ id: string; type: string; message: string }[]>([]);
+  const seenNotificationIds = new Set<string>();
 
   // Initialize data asynchronously from API service
   function normalizeTaskDefaults() {
@@ -27,29 +32,141 @@ export const useTaskStore = defineStore('taskStore', () => {
     });
   }
 
+  function hydrateProjectMembers() {
+    projects.value = projects.value.map(project => ({
+      ...project,
+      members: (project.members || []).map(member => {
+        const user = users.value.find(u => u.id === member.id || u.id === member.fullName);
+        return user
+          ? {
+              id: user.id,
+              fullName: user.fullName,
+              avatarUrl: user.avatarUrl,
+              role: member.role || user.role,
+              isOnline: user.isOnline
+            }
+          : member;
+      })
+    }));
+  }
+
   async function refreshWorkspaceApis() {
-    users.value = await apiService.getUsers();
-    projects.value = await apiService.getProjects();
-    tasks.value = await apiService.getTasks();
-    normalizeTaskDefaults();
+    try {
+      users.value = await apiService.getUsers().then(res => {
+        notifyServiceOnline.value = true;
+        return res;
+      }).catch(err => {
+        console.error('Notify Service (Users) is offline:', err);
+        notifyServiceOnline.value = false;
+        return users.value;
+      });
+      projects.value = await apiService.getProjects().then(res => {
+        projectServiceOnline.value = true;
+        return res;
+      }).catch(err => {
+        console.error('Project Service is offline:', err);
+        projectServiceOnline.value = false;
+        return projects.value;
+      });
+      hydrateProjectMembers();
+      tasks.value = await apiService.getTasks().then(res => {
+        taskServiceOnline.value = true;
+        return res;
+      }).catch(err => {
+        console.error('Task Service is offline:', err);
+        taskServiceOnline.value = false;
+        return tasks.value;
+      });
+      normalizeTaskDefaults();
+    } catch (e) {
+      console.error('Failed to refresh workspace APIs:', e);
+    }
   }
 
   async function init() {
     const token = localStorage.getItem('token');
     if (!token) return;
+
     try {
-      users.value = await apiService.getUsers();
-      projects.value = await apiService.getProjects();
-      tasks.value = await apiService.getTasks();
-      currentUser.value = await apiService.getCurrentUser();
-      notifications.value = await apiService.getNotifications();
-      
-      // Set default values if fields are missing in older storage
-      normalizeTaskDefaults();
-    } catch (error) {
-      console.error('Failed to initialize task store:', error);
-      logoutAction();
+      users.value = await apiService.getUsers().then(res => {
+        notifyServiceOnline.value = true;
+        return res;
+      }).catch(err => {
+        console.error('Notify Service (Users) is offline:', err);
+        notifyServiceOnline.value = false;
+        return [];
+      });
+    } catch (e) {
+      notifyServiceOnline.value = false;
     }
+
+    try {
+      currentUser.value = await apiService.getCurrentUser().then(res => {
+        notifyServiceOnline.value = true;
+        return res;
+      }).catch(err => {
+        console.error('Notify Service (Current User) is offline:', err);
+        notifyServiceOnline.value = false;
+        return {} as User;
+      });
+    } catch (e) {
+      notifyServiceOnline.value = false;
+    }
+
+    try {
+      notifications.value = await apiService.getNotifications().then(res => {
+        notifyServiceOnline.value = true;
+        return res;
+      }).catch(err => {
+        console.error('Notify Service (Notifications) is offline:', err);
+        notifyServiceOnline.value = false;
+        return [];
+      });
+      syncNotificationToasts(notifications.value, false);
+    } catch (e) {
+      notifyServiceOnline.value = false;
+    }
+
+    try {
+      projects.value = await apiService.getProjects().then(res => {
+        projectServiceOnline.value = true;
+        return res;
+      }).catch(err => {
+        console.error('Project Service is offline:', err);
+        projectServiceOnline.value = false;
+        return [];
+      });
+    } catch (e) {
+      projectServiceOnline.value = false;
+    }
+
+    hydrateProjectMembers();
+
+    try {
+      tasks.value = await apiService.getTasks().then(res => {
+        taskServiceOnline.value = true;
+        return res;
+      }).catch(err => {
+        console.error('Task Service is offline:', err);
+        taskServiceOnline.value = false;
+        return [];
+      });
+    } catch (e) {
+      taskServiceOnline.value = false;
+    }
+
+    normalizeTaskDefaults();
+  }
+
+  // Periodic background check & data refresh (every 10 seconds)
+  if (typeof window !== 'undefined') {
+    setInterval(async () => {
+      const token = localStorage.getItem('token');
+      if (token) {
+        await refreshWorkspaceApis();
+        await refreshNotifications();
+      }
+    }, 10000);
   }
 
   async function loginAction(email: string, password: string) {
@@ -151,6 +268,20 @@ export const useTaskStore = defineStore('taskStore', () => {
     setTimeout(() => {
       toasts.value = toasts.value.filter(t => t.id !== id);
     }, 4500);
+  }
+
+  function pushToast(type: string, message: string) {
+    triggerToast(type, message);
+  }
+
+  function syncNotificationToasts(items: Notification[], shouldToastNew = true) {
+    items.forEach(notification => {
+      if (seenNotificationIds.has(notification.id)) return;
+      seenNotificationIds.add(notification.id);
+      if (shouldToastNew && !notification.isRead) {
+        triggerToast('notification', `${notification.title}: ${notification.message}`);
+      }
+    });
   }
 
   // API Call Actions for Tasks
@@ -267,6 +398,7 @@ export const useTaskStore = defineStore('taskStore', () => {
         await refreshWorkspaceApis();
         await refreshTaskComments(taskId);
         await refreshNotifications();
+        triggerToast('comment.created', 'Bình luận đã được gửi và ghi vào nhật ký hoạt động.');
       }
     } catch (error) {
       console.error('Failed to add comment:', error);
@@ -300,7 +432,9 @@ export const useTaskStore = defineStore('taskStore', () => {
 
   async function refreshNotifications(status: 'all' | 'unread' | 'read' = 'all') {
     try {
-      notifications.value = await apiService.getNotifications(status);
+      const items = await apiService.getNotifications(status);
+      syncNotificationToasts(items, notifications.value.length > 0);
+      notifications.value = items;
     } catch (error) {
       console.error('Failed to refresh notifications:', error);
     }
@@ -357,6 +491,8 @@ export const useTaskStore = defineStore('taskStore', () => {
         projectId: null
       });
       notifications.value = [notification, ...notifications.value];
+      seenNotificationIds.add(notification.id);
+      triggerToast('notification.manual', `${notification.title}: ${notification.message}`);
       return notification;
     } catch (error) {
       console.error('Failed to create notification:', error);
@@ -435,6 +571,28 @@ export const useTaskStore = defineStore('taskStore', () => {
     }
   }
 
+  async function refreshUserCredentials() {
+    try {
+      userCredentials.value = await apiService.getUserCredentials();
+    } catch (error) {
+      console.error('Failed to load user credentials:', error);
+      userCredentials.value = users.value.map(user => ({
+        id: user.id,
+        fullName: user.fullName,
+        email: user.email || '',
+        role: user.role,
+        password: user.email === 'admin@projecthub.com' ? 'admin123' : '123456'
+      }));
+    }
+  }
+
+  async function resetUserPassword(userId: string, newPassword: string) {
+    await apiService.resetUserPassword(userId, newPassword);
+    const credential = userCredentials.value.find(item => item.id === userId);
+    if (credential) credential.password = newPassword;
+    triggerToast('user.password.reset', 'Admin đã đặt lại mật khẩu người dùng.');
+  }
+
   // --- N2 ASYNC ACTIONS ---
 
   // Sub-task management
@@ -499,9 +657,11 @@ export const useTaskStore = defineStore('taskStore', () => {
     tasks,
     notifications,
     activityLogs,
+    userCredentials,
     currentUser,
     events,
     toasts,
+    pushToast,
     init,
     getProjectProgress,
     totalTasks,
@@ -527,6 +687,8 @@ export const useTaskStore = defineStore('taskStore', () => {
     addProject,
     updateProjectMembers,
     updateUserRole,
+    refreshUserCredentials,
+    resetUserPassword,
     updateProfile,
     changePassword,
     
@@ -539,6 +701,11 @@ export const useTaskStore = defineStore('taskStore', () => {
     // Auth
     loginAction,
     registerAction,
-    logoutAction
+    logoutAction,
+
+    // Connectivity Status
+    projectServiceOnline,
+    taskServiceOnline,
+    notifyServiceOnline
   };
 });

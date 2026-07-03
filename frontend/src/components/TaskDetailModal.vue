@@ -1,11 +1,11 @@
 <template>
   <Transition name="modal">
-    <div v-if="isOpen && localTask" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
+    <div v-if="isOpen && localTask" class="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-900/40 backdrop-blur-sm sm:p-4">
       <!-- Modal Panel -->
-      <div class="bg-white rounded-2xl shadow-xl w-full max-w-3xl overflow-hidden border border-slate-100 flex flex-col max-h-[90vh] transition-all transform duration-300">
+      <div class="bg-white rounded-2xl shadow-xl w-full max-w-4xl overflow-hidden border border-slate-100 flex flex-col max-h-[92vh] transition-all transform duration-300">
         <!-- Header -->
-        <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <div class="flex items-center space-x-2">
+        <div class="px-4 py-4 border-b border-slate-100 flex items-start justify-between gap-3 bg-slate-50/50 sm:px-6">
+          <div class="flex flex-wrap items-center gap-2">
             <span
               class="px-2.5 py-0.5 rounded-full text-xs font-semibold"
               :class="[
@@ -24,7 +24,7 @@
         </div>
 
         <!-- Scrollable content -->
-        <div class="flex-1 overflow-y-auto p-6 space-y-6">
+        <div class="flex-1 overflow-y-auto p-4 space-y-6 sm:p-6">
           <!-- Title & Project -->
           <div class="space-y-1">
             <input
@@ -41,7 +41,7 @@
           </div>
 
           <!-- Configuration Grid -->
-          <div class="grid grid-cols-2 gap-6 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+          <div class="grid gap-6 bg-slate-50 p-4 rounded-2xl border border-slate-100 md:grid-cols-2">
             <!-- Status -->
             <div class="relative w-full">
               <select
@@ -80,7 +80,11 @@
                     :key="user.id"
                     class="flex items-center space-x-1 px-2.5 py-1 bg-slate-100 rounded-xl text-xs font-semibold text-slate-700"
                   >
-                    <img :src="user.avatarUrl" class="w-4 h-4 rounded-full" />
+                    <img
+                      :src="avatarFor(user.fullName, user.avatarUrl, '64748b')"
+                      @error="onAvatarError($event, user.fullName, '64748b')"
+                      class="w-4 h-4 rounded-full"
+                    />
                     <span>{{ user.fullName }}</span>
                   </div>
                 </template>
@@ -95,11 +99,15 @@
                     class="flex items-center space-x-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition-all select-none hover:scale-102 cursor-pointer"
                     :class="[
                       (localTask.assigneeId || '').split(',').includes(user.id)
-                        ? 'bg-indigo-50 border-indigo-200 text-indigo-650'
+                        ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
                         : 'bg-white border-slate-200 text-slate-500 hover:bg-slate-50'
                     ]"
                   >
-                    <img :src="user.avatarUrl" class="w-4.5 h-4.5 rounded-full" />
+                    <img
+                      :src="avatarFor(user.fullName, user.avatarUrl, '6366f1')"
+                      @error="onAvatarError($event, user.fullName, '6366f1')"
+                      class="size-5 rounded-full"
+                    />
                     <span>{{ user.fullName }}</span>
                   </button>
                 </template>
@@ -112,7 +120,7 @@
             </div>
 
             <!-- Priority & Estimated Hours -->
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid gap-3 sm:grid-cols-2">
               <!-- Priority -->
               <div class="relative w-full">
                 <select
@@ -225,13 +233,22 @@
           </div>
 
           <!-- Two Column Sections: Sub-tasks and Time Tracking -->
-          <div class="grid grid-cols-2 gap-8 border-t border-slate-100 pt-6">
+          <div class="grid gap-8 border-t border-slate-100 pt-6 lg:grid-cols-2">
             <!-- Left: Sub-tasks checklist -->
             <div class="space-y-4">
               <h4 class="text-sm font-bold text-slate-800 flex items-center space-x-1.5">
                 <CheckSquare class="w-4 h-4 text-indigo-500" />
                 <span>Công việc con ({{ subTasksList.length }})</span>
               </h4>
+
+              <button
+                v-if="!isViewer && subTasksList.length > 0"
+                type="button"
+                class="rounded-xl bg-indigo-50 px-3 py-1.5 text-[11px] font-black text-indigo-700 transition hover:bg-indigo-100"
+                @click="completeAllSubTasks"
+              >
+                Hoàn thành tất cả công việc con
+              </button>
 
               <!-- Progress bar for sub-tasks -->
               <div v-if="subTasksList.length > 0" class="space-y-1">
@@ -318,6 +335,16 @@
                 <span>Log thời gian làm việc</span>
               </h4>
 
+              <button
+                v-if="!isViewer && localTask.status !== 'InProgress' && localTask.status !== 'Done'"
+                type="button"
+                class="inline-flex items-center gap-1 rounded-xl bg-emerald-50 px-3 py-1.5 text-[11px] font-black text-emerald-700 transition hover:bg-emerald-100"
+                @click="startWork"
+              >
+                <PlayCircle class="size-3.5" />
+                Bắt đầu làm
+              </button>
+
               <!-- Progress bar logs vs estimation -->
               <div class="space-y-1">
                 <div class="flex justify-between text-[10px] text-slate-400 font-semibold">
@@ -350,7 +377,7 @@
 
               <!-- Log hour quick form -->
               <form v-if="!isViewer" @submit.prevent="submitWorkLog" class="p-3 bg-slate-50/50 border border-slate-100 rounded-xl space-y-3.5">
-                <div class="grid grid-cols-3 gap-2">
+                <div class="grid gap-2 sm:grid-cols-3">
                   <div class="col-span-1 relative">
                     <input
                       v-model.number="newLogHours"
@@ -404,6 +431,48 @@
             </div>
           </div>
 
+          <div class="grid gap-4 border-t border-slate-100 pt-6 lg:grid-cols-2">
+            <div class="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+              <h4 class="flex items-center gap-2 text-sm font-bold text-slate-800">
+                <GitBranch class="size-4 text-amber-500" />
+                Công việc ràng buộc
+              </h4>
+              <select
+                v-model="blockedByTaskId"
+                :disabled="isViewer"
+                class="mt-3 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-bold text-slate-700 outline-none focus:border-amber-400 disabled:cursor-default"
+                @change="saveBlockedBy"
+              >
+                <option value="">Không bị chặn</option>
+                <option v-for="task in availableBlockers" :key="task.id" :value="task.id">
+                  {{ task.title }}
+                </option>
+              </select>
+              <div v-if="blockedByTask" class="mt-3 rounded-xl bg-white p-3 text-xs font-bold text-slate-600">
+                Đang chờ: <span class="text-slate-950">{{ blockedByTask.title }}</span>
+                <span class="ml-2 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] text-amber-700">{{ blockedByTask.status }}</span>
+              </div>
+            </div>
+
+            <div class="rounded-2xl border border-slate-100 bg-slate-50/70 p-4">
+              <h4 class="flex items-center gap-2 text-sm font-bold text-slate-800">
+                <AtSign class="size-4 text-sky-500" />
+                Tag thành viên
+              </h4>
+              <div class="mt-3 flex max-h-24 flex-wrap gap-2 overflow-y-auto">
+                <button
+                  v-for="user in taskStore.users"
+                  :key="user.id"
+                  type="button"
+                  class="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[11px] font-black text-slate-600 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700"
+                  @click="appendMention(user.fullName)"
+                >
+                  @{{ user.fullName }}
+                </button>
+              </div>
+            </div>
+          </div>
+
           <!-- Comments Section -->
           <div class="border-t border-slate-100 pt-6 space-y-4">
             <h4 class="text-sm font-bold text-slate-800 flex items-center space-x-1.5">
@@ -414,7 +483,12 @@
             <!-- Comments List -->
             <div v-if="commentsList.length > 0" class="space-y-3">
               <div v-for="comment in commentsList" :key="comment.id" class="flex items-start space-x-3 p-3 bg-slate-50/50 rounded-xl border border-slate-100/50">
-                <img :src="comment.userAvatar" alt="Avatar" class="w-8 h-8 rounded-full" />
+                <img
+                  :src="avatarFor(comment.userName, comment.userAvatar, '0ea5e9')"
+                  @error="onAvatarError($event, comment.userName, '0ea5e9')"
+                  alt="Avatar"
+                  class="w-8 h-8 rounded-full"
+                />
                 <div class="flex-1 space-y-1">
                   <div class="flex items-center justify-between">
                     <span class="text-xs font-bold text-slate-800">{{ comment.userName }}</span>
@@ -478,7 +552,12 @@
 
             <!-- New Comment Form -->
             <form v-if="!isViewer" @submit.prevent="submitComment" class="flex space-x-3 items-center pt-2">
-              <img :src="taskStore.currentUser.avatarUrl || 'https://ui-avatars.com/api/?name=User&background=cbd5e1&color=fff'" alt="My avatar" class="w-8 h-8 rounded-full animate-pulse" />
+              <img
+                :src="avatarFor(taskStore.currentUser.fullName, taskStore.currentUser.avatarUrl, '0f766e')"
+                @error="onAvatarError($event, taskStore.currentUser.fullName, '0f766e')"
+                alt="My avatar"
+                class="w-8 h-8 rounded-full animate-pulse"
+              />
               <div class="flex-1 relative">
                 <input
                   v-model="newCommentText"
@@ -510,7 +589,7 @@
         </div>
 
         <!-- Footer / Actions -->
-        <div class="px-6 py-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between">
+        <div class="px-4 py-4 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between gap-3 sm:px-6">
           <button
             v-if="isManager"
             @click="triggerDelete"
@@ -537,8 +616,9 @@
 
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue';
-import { X, MessageSquare, Send, Trash2, CheckSquare, Clock, Plus, Pencil, Check } from '@lucide/vue';
+import { X, MessageSquare, Send, Trash2, CheckSquare, Clock, Plus, Pencil, Check, PlayCircle, GitBranch, AtSign } from '@lucide/vue';
 import { useTaskStore } from '../stores/taskStore';
+import { avatarFor, onAvatarError } from '../utils/avatar';
 
 // Sóng nước ripple cho các nút bấm trong modal chi tiết
 function handleButtonClick(event: MouseEvent) {
@@ -591,6 +671,7 @@ const newLogHours = ref<number | null>(null);
 const newLogDescription = ref('');
 const editingCommentId = ref<string | null>(null);
 const editingCommentText = ref('');
+const blockedByTaskId = ref('');
 
 // Available Labels config
 const availableLabels = [
@@ -623,6 +704,7 @@ function loadTaskData() {
     newLogDescription.value = '';
     editingCommentId.value = null;
     editingCommentText.value = '';
+    loadBlockedBy(task.id);
     void taskStore.refreshTaskComments(task.id);
   }
 }
@@ -671,6 +753,35 @@ const assigneesList = computed(() => {
   return taskStore.users.filter(u => ids.includes(u.id));
 });
 
+const availableBlockers = computed(() => {
+  if (!localTask.value) return [];
+  return taskStore.tasks.filter(task => task.id !== localTask.value?.id);
+});
+
+const blockedByTask = computed(() => {
+  if (!blockedByTaskId.value) return null;
+  return taskStore.tasks.find(task => task.id === blockedByTaskId.value) || null;
+});
+
+function blockedStorageKey(taskId: string) {
+  return `sf_blocked_by_${taskId}`;
+}
+
+function loadBlockedBy(taskId: string) {
+  blockedByTaskId.value = localStorage.getItem(blockedStorageKey(taskId)) || '';
+}
+
+function saveBlockedBy() {
+  if (!localTask.value) return;
+  const key = blockedStorageKey(localTask.value.id);
+  if (blockedByTaskId.value) {
+    localStorage.setItem(key, blockedByTaskId.value);
+  } else {
+    localStorage.removeItem(key);
+  }
+  taskStore.pushToast('task.dependency', 'Đã cập nhật ràng buộc công việc.');
+}
+
 function toggleDetailAssignee(userId: string) {
   if (localTask.value) {
     const currentIds = localTask.value.assigneeId ? localTask.value.assigneeId.split(',').filter(Boolean) : [];
@@ -694,6 +805,13 @@ function saveChanges() {
   if (localTask.value) {
     taskStore.updateTask(localTask.value);
   }
+}
+
+function startWork() {
+  if (!localTask.value) return;
+  localTask.value.status = 'InProgress';
+  saveChanges();
+  taskStore.pushToast('task.status.changed', `Đã bắt đầu xử lý "${localTask.value.title}".`);
 }
 
 // Label management
@@ -728,7 +846,25 @@ function submitSubTask() {
 function toggleSubTask(subTaskId: string) {
   if (localTask.value) {
     taskStore.toggleSubTask(localTask.value.id, subTaskId);
+    setTimeout(() => {
+      if (!localTask.value || subTasksList.value.length === 0) return;
+      const allDone = subTasksList.value.every(sub => sub.isCompleted);
+      if (allDone && localTask.value.status !== 'Done') {
+        localTask.value.status = 'Done';
+        saveChanges();
+      }
+    }, 250);
   }
+}
+
+function completeAllSubTasks() {
+  if (!localTask.value) return;
+  subTasksList.value
+    .filter(sub => !sub.isCompleted)
+    .forEach(sub => taskStore.toggleSubTask(localTask.value!.id, sub.id));
+  localTask.value.status = 'Done';
+  saveChanges();
+  taskStore.pushToast('task.status.changed', 'Đã đánh dấu hoàn thành toàn bộ công việc con.');
 }
 
 function deleteSubTask(subTaskId: string) {
@@ -766,6 +902,13 @@ async function submitComment() {
     await taskStore.addComment(localTask.value.id, newCommentText.value.trim());
     newCommentText.value = '';
   }
+}
+
+function appendMention(fullName: string) {
+  const mention = `@${fullName}`;
+  newCommentText.value = newCommentText.value.trim()
+    ? `${newCommentText.value.trim()} ${mention} `
+    : `${mention} `;
 }
 
 function canManageComment(comment: Comment) {

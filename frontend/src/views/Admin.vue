@@ -1,7 +1,7 @@
 <template>
   <div class="flex-1 flex flex-col min-h-screen pb-12">
     <!-- Top Header Bar -->
-    <header class="bg-white border-b border-slate-100 px-8 py-4 flex items-center justify-between sticky top-0 z-10">
+    <header class="bg-white border-b border-slate-100 px-4 py-4 flex flex-col gap-3 sticky top-0 z-10 sm:flex-row sm:items-center sm:justify-between lg:px-8">
       <div class="flex items-center space-x-3">
         <ShieldCheck class="w-6 h-6 text-indigo-600" />
         <h1 class="text-lg font-bold text-slate-800 tracking-tight">Trang Quản trị Hệ thống</h1>
@@ -18,9 +18,9 @@
     </header>
 
     <!-- Main Workspace -->
-    <div class="flex-1 px-8 py-6 max-w-6xl mx-auto w-full space-y-6">
+    <div class="flex-1 px-4 py-6 max-w-6xl mx-auto w-full space-y-6 lg:px-8">
       <!-- Admin Tab Selector -->
-      <div class="flex space-x-3 border-b border-slate-100 pb-3">
+      <div class="flex gap-3 overflow-x-auto border-b border-slate-100 pb-3">
         <button
           @click="activeSubTab = 'projects'"
           class="flex items-center space-x-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all border cursor-pointer"
@@ -49,7 +49,7 @@
 
       <!-- Tab 1: Projects & Group Members Management -->
       <div v-if="activeSubTab === 'projects'" class="space-y-6">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div class="space-y-1">
             <h2 class="text-base font-bold text-slate-800">Quản lý Dự án & Thành viên</h2>
             <p class="text-xs text-slate-500">Xem danh sách dự án, thêm thành viên vào nhóm và phân công công việc.</p>
@@ -58,14 +58,14 @@
             @click="isCreateProjectModalOpen = true"
             class="flex items-center space-x-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-semibold shadow-md shadow-indigo-100 hover:shadow-indigo-200 transition-all duration-200 cursor-pointer"
           >
-            <FolderPlus class="w-4.5 h-4.5" />
+            <FolderPlus class="size-5" />
             <span>Tạo dự án mới</span>
           </button>
         </div>
 
-        <div class="grid grid-cols-3 gap-6">
+        <div class="grid gap-6 lg:grid-cols-3">
           <!-- Projects List Left Side (1 Column) -->
-          <div class="col-span-1 bg-white border border-slate-100 rounded-2xl p-4 shadow-sm space-y-3">
+          <div class="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm space-y-3 lg:col-span-1">
             <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider px-1">Danh sách dự án</h3>
             <div class="space-y-2 max-h-[60vh] overflow-y-auto pr-1">
               <div
@@ -99,7 +99,7 @@
           </div>
 
           <!-- Project Detail & Member Management Right Side (2 Columns) -->
-          <div class="col-span-2 space-y-6">
+          <div class="space-y-6 lg:col-span-2">
             <div v-if="selectedProject" class="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm space-y-6 text-left">
               <!-- Project Meta -->
               <div class="flex items-start justify-between border-b border-slate-50 pb-4">
@@ -143,14 +143,19 @@
                 </div>
 
                 <!-- Members List -->
-                <div v-if="selectedProject.members && selectedProject.members.length > 0" class="grid grid-cols-2 gap-4">
+                <div v-if="selectedProject.members && selectedProject.members.length > 0" class="grid gap-4 sm:grid-cols-2">
                   <div
                     v-for="member in selectedProject.members"
                     :key="member.id"
                     class="flex items-center justify-between p-3.5 rounded-xl border border-slate-100 hover:bg-slate-50 transition-colors group"
                   >
                     <div class="flex items-center space-x-3 min-w-0">
-                      <img :src="member.avatarUrl" alt="Avatar" class="w-8 h-8 rounded-full border border-slate-100" />
+                      <img
+                        :src="avatarFor(member.fullName, member.avatarUrl, '2563eb')"
+                        @error="onAvatarError($event, member.fullName, '2563eb')"
+                        alt="Avatar"
+                        class="w-8 h-8 rounded-full border border-slate-100"
+                      />
                       <div class="truncate">
                         <p class="text-xs font-bold text-slate-700 truncate leading-snug">{{ member.fullName }}</p>
                         <p class="text-[10px] text-slate-400 font-medium truncate mt-0.5">{{ member.role }}</p>
@@ -198,7 +203,7 @@
                         'bg-emerald-50 border-emerald-100 text-emerald-600'
                       ]"
                     >
-                      {{ task.priority === 'High' ? 'Cao' : task.priority === 'Medium' ? 'T.Bình' : 'Thấp' }}
+                      {{ task.priority === 'High' ? 'Cao' : task.priority === 'Medium' ? 'Trung bình' : 'Thấp' }}
                     </span>
                   </div>
                 </div>
@@ -225,26 +230,45 @@
           <p class="text-xs text-slate-500">Danh sách thành viên hệ thống. Cập nhật các quyền hoặc vai trò trực tiếp.</p>
         </div>
 
+        <div class="grid gap-3 md:grid-cols-4">
+          <div v-for="stat in userStats" :key="stat.label" class="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+            <p class="text-[11px] font-black uppercase text-slate-400">{{ stat.label }}</p>
+            <p class="mt-2 text-2xl font-black text-slate-900">{{ stat.value }}</p>
+          </div>
+        </div>
+
         <div class="overflow-x-auto">
-          <table class="w-full text-xs text-slate-600 font-medium">
+          <table class="w-full min-w-[980px] text-xs text-slate-600 font-medium">
             <thead>
               <tr class="border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-left">
                 <th class="pb-3.5 pl-2">Họ tên & Tài khoản</th>
                 <th class="pb-3.5">Email</th>
+                <th class="pb-3.5">Mật khẩu demo</th>
                 <th class="pb-3.5">Trạng thái</th>
                 <th class="pb-3.5">Vai trò hệ thống (Role)</th>
+                <th class="pb-3.5">Reset mật khẩu</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-50">
               <tr v-for="user in taskStore.users" :key="user.id" class="hover:bg-slate-50/50 transition-colors">
                 <td class="py-3.5 pl-2 flex items-center space-x-3">
-                  <img :src="user.avatarUrl" alt="Avatar" class="w-8 h-8 rounded-full border border-slate-100" />
+                  <img
+                    :src="avatarFor(user.fullName, user.avatarUrl, '6366f1')"
+                    @error="onAvatarError($event, user.fullName, '6366f1')"
+                    alt="Avatar"
+                    class="w-8 h-8 rounded-full border border-slate-100"
+                  />
                   <div>
                     <span class="font-bold text-slate-800 block leading-snug">{{ user.fullName }}</span>
                     <span class="text-[10px] text-slate-400 font-semibold block mt-0.5">ID: {{ user.id }}</span>
                   </div>
                 </td>
                 <td class="py-3.5 text-slate-700 font-semibold">{{ user.email || 'N/A' }}</td>
+                <td class="py-3.5">
+                  <span class="rounded-lg bg-slate-100 px-2.5 py-1 font-mono text-[11px] font-black text-slate-700">
+                    {{ credentialsById[user.id]?.password || defaultPassword(user.email) }}
+                  </span>
+                </td>
                 <td class="py-3.5">
                   <span
                     class="px-2 py-0.5 rounded-full text-[9px] font-bold flex items-center w-max space-x-1"
@@ -270,11 +294,30 @@
                       <option value="DevOps Engineer">DevOps Engineer</option>
                       <option value="QA Engineer">QA Engineer</option>
                       <option value="UI/UX Designer">UI/UX Designer</option>
+                      <option value="Developer">Developer</option>
+                      <option value="Member">Member</option>
                       <option value="Viewer">Viewer</option>
                     </select>
                     <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
                       <svg class="fill-current h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
                     </div>
+                  </div>
+                </td>
+                <td class="py-3.5">
+                  <div class="flex items-center gap-2">
+                    <input
+                      v-model="resetPasswords[user.id]"
+                      type="text"
+                      placeholder="Mật khẩu mới"
+                      class="w-32 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 outline-none focus:border-indigo-400"
+                    />
+                    <button
+                      type="button"
+                      class="rounded-xl bg-indigo-600 px-3 py-1.5 text-xs font-black text-white transition hover:bg-indigo-700"
+                      @click="resetPasswordFor(user.id)"
+                    >
+                      Đổi
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -290,8 +333,8 @@
         <div class="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden border border-slate-100 flex flex-col transition-all transform duration-300 text-left">
           <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
             <h3 class="text-sm font-bold text-slate-800">Tạo dự án mới</h3>
-            <button @click="isCreateProjectModalOpen = false" class="text-slate-400 hover:text-slate-650 p-1.5 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer">
-              <X class="w-4.5 h-4.5" />
+            <button @click="isCreateProjectModalOpen = false" class="text-slate-400 hover:text-slate-700 p-1.5 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer">
+              <X class="size-5" />
             </button>
           </div>
 
@@ -383,7 +426,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, reactive } from 'vue';
 import { useRouter } from 'vue-router';
 import {
   ShieldCheck,
@@ -396,6 +439,7 @@ import {
   FolderPlus
 } from '@lucide/vue';
 import { useTaskStore } from '../stores/taskStore';
+import { avatarFor, onAvatarError } from '../utils/avatar';
 import type { Project } from '../services/mockData';
 
 const taskStore = useTaskStore();
@@ -406,6 +450,7 @@ const activeSubTab = ref<'projects' | 'users'>('projects');
 const selectedProject = ref<Project | null>(null);
 const quickSelectedMemberId = ref('');
 const isCreateProjectModalOpen = ref(false);
+const resetPasswords = reactive<Record<string, string>>({});
 
 // Create Project fields
 const newProject = ref<Omit<Project, 'id' | 'createdAt' | 'progress'>>({
@@ -421,8 +466,9 @@ const newProject = ref<Omit<Project, 'id' | 'createdAt' | 'progress'>>({
 onMounted(() => {
   const role = taskStore.currentUser?.role;
   if (role !== 'Project Manager' && role !== 'Admin') {
-    router.push('/');
+    router.push('/dashboard');
   } else {
+    void taskStore.refreshUserCredentials();
     // Select the first project by default if available
     if (taskStore.projects.length > 0) {
       selectedProject.value = taskStore.projects[0];
@@ -443,6 +489,34 @@ const usersNotInProject = computed(() => {
   const memberIds = currentMembers.map(m => m.id);
   return taskStore.users.filter(u => !memberIds.includes(u.id));
 });
+
+const credentialsById = computed(() => Object.fromEntries(
+  taskStore.userCredentials.map(item => [item.id, item])
+));
+
+const userStats = computed(() => [
+  { label: 'Tổng người dùng', value: taskStore.users.length },
+  { label: 'Admin/PM', value: taskStore.users.filter(user => ['Admin', 'Project Manager'].includes(user.role)).length },
+  { label: 'Dev/QA/Design', value: taskStore.users.filter(user => ['Backend Dev', 'Frontend Lead', 'Developer', 'QA Engineer', 'UI/UX Designer'].includes(user.role)).length },
+  { label: 'Đang online', value: taskStore.users.filter(user => user.isOnline).length }
+]);
+
+function defaultPassword(email?: string) {
+  return email === 'admin@projecthub.com' ? 'admin123' : '123456';
+}
+
+async function resetPasswordFor(userId: string) {
+  const newPassword = (resetPasswords[userId] || '').trim();
+  if (newPassword.length < 6) {
+    alert('Mật khẩu mới phải có ít nhất 6 ký tự.');
+    return;
+  }
+
+  if (!confirm('Xác nhận đặt lại mật khẩu cho tài khoản này?')) return;
+  await taskStore.resetUserPassword(userId, newPassword);
+  await taskStore.refreshUserCredentials();
+  resetPasswords[userId] = '';
+}
 
 function getAssigneeName(assigneeId?: string) {
   if (!assigneeId) return 'Chưa phân công';

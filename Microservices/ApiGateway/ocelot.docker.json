@@ -57,6 +57,27 @@
       "DownstreamHostAndPorts": [{ "Host": "notify-service", "Port": 5003 }]
     },
     {
+      "UpstreamPathTemplate": "/api/activity-logs",
+      "UpstreamHttpMethod": [ "GET" ],
+      "DownstreamPathTemplate": "/api/activity-logs",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [{ "Host": "notify-service", "Port": 5003 }]
+    },
+    {
+      "UpstreamPathTemplate": "/api/diagnostics/{everything}",
+      "UpstreamHttpMethod": [ "GET" ],
+      "DownstreamPathTemplate": "/api/diagnostics/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [{ "Host": "notify-service", "Port": 5003 }]
+    },
+    {
+      "UpstreamPathTemplate": "/api/internal/{everything}",
+      "UpstreamHttpMethod": [ "POST" ],
+      "DownstreamPathTemplate": "/api/internal/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [{ "Host": "notify-service", "Port": 5003 }]
+    },
+    {
       "UpstreamPathTemplate": "/api/projects/{everything}",
       "UpstreamHttpMethod": [ "GET", "POST", "PUT", "PATCH", "DELETE" ],
       "DownstreamPathTemplate": "/api/projects/{everything}",

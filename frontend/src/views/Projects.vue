@@ -1,7 +1,7 @@
 <template>
   <div class="min-h-screen bg-[#f6f8fb]">
-    <header class="sticky top-0 z-10 border-b border-slate-200/70 bg-white/90 px-8 py-5 backdrop-blur">
-      <div class="mx-auto flex max-w-7xl items-center justify-between">
+    <header class="sticky top-0 z-10 border-b border-slate-200/70 bg-white/90 px-4 py-5 backdrop-blur lg:px-8">
+      <div class="mx-auto flex max-w-7xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p class="text-[11px] font-black uppercase tracking-[0.22em] text-orange-600">Project & Member Service</p>
           <h1 class="mt-1 text-2xl font-black text-slate-950">Không gian dự án</h1>
@@ -20,8 +20,8 @@
       </div>
     </header>
 
-    <main class="mx-auto grid max-w-7xl grid-cols-12 gap-6 px-8 py-7">
-      <section class="col-span-12 grid grid-cols-4 gap-4">
+    <main class="mx-auto grid max-w-7xl gap-6 px-4 py-7 lg:grid-cols-12 lg:px-8">
+      <section class="grid gap-4 sm:grid-cols-2 lg:col-span-12 xl:grid-cols-4">
         <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <p class="text-[10px] font-black uppercase tracking-wider text-slate-400">Tổng dự án</p>
           <p class="mt-2 text-3xl font-black text-slate-950">{{ taskStore.projects.length }}</p>
@@ -40,7 +40,7 @@
         </div>
       </section>
 
-      <section class="col-span-5 space-y-4">
+      <section class="space-y-4 lg:col-span-5">
         <div class="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
           <div class="relative">
             <Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -90,7 +90,8 @@
                 <img
                   v-for="member in project.members.slice(0, 5)"
                   :key="member.id"
-                  :src="member.avatarUrl"
+                  :src="avatarFor(member.fullName, member.avatarUrl, '2563eb')"
+                  @error="onAvatarError($event, member.fullName, '2563eb')"
                   class="h-8 w-8 rounded-full border-2 border-white object-cover"
                   :alt="member.fullName"
                 />
@@ -107,7 +108,7 @@
         </div>
       </section>
 
-      <section class="col-span-7">
+      <section class="lg:col-span-7">
         <div v-if="selectedProject" class="space-y-6">
           <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
             <div class="h-28" :class="projectTheme(selectedProject.color).banner"></div>
@@ -128,7 +129,7 @@
                 </router-link>
               </div>
 
-              <div class="mt-6 grid grid-cols-3 gap-3">
+              <div class="mt-6 grid gap-3 sm:grid-cols-3">
                 <div class="rounded-xl bg-slate-50 p-4">
                   <p class="text-[10px] font-black uppercase text-slate-400">Ngày tạo</p>
                   <p class="mt-1 text-sm font-black text-slate-900">{{ selectedProject.createdAt }}</p>
@@ -145,7 +146,7 @@
             </div>
           </div>
 
-          <div class="grid grid-cols-2 gap-6">
+          <div class="grid gap-6 xl:grid-cols-2">
             <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
               <div class="flex items-center justify-between">
                 <h3 class="text-base font-black text-slate-950">Thành viên dự án</h3>
@@ -166,7 +167,12 @@
                   class="flex items-center justify-between rounded-xl border border-slate-200 p-3 transition hover:bg-slate-50"
                 >
                   <span class="flex min-w-0 items-center gap-3">
-                    <img :src="user.avatarUrl" class="h-9 w-9 rounded-full object-cover" :alt="user.fullName" />
+                    <img
+                      :src="avatarFor(user.fullName, user.avatarUrl, '0f766e')"
+                      @error="onAvatarError($event, user.fullName, '0f766e')"
+                      class="h-9 w-9 rounded-full object-cover"
+                      :alt="user.fullName"
+                    />
                     <span class="min-w-0">
                       <span class="block truncate text-sm font-black text-slate-900">{{ user.fullName }}</span>
                       <span class="block truncate text-[10px] font-bold text-slate-400">{{ user.role }}</span>
@@ -224,14 +230,14 @@
         <div class="flex items-start justify-between">
           <div>
             <h2 class="text-xl font-black text-slate-950">Tạo dự án mới</h2>
-            <p class="mt-1 text-sm text-slate-500">Gửi `POST /api/projects` qua Gateway vào Project Service.</p>
+            <p class="mt-1 text-sm text-slate-500">Thiết lập dự án, trạng thái và thành viên ban đầu.</p>
           </div>
           <button type="button" @click="isCreateOpen = false" class="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
             <X class="h-5 w-5" />
           </button>
         </div>
 
-        <div class="mt-5 grid grid-cols-2 gap-4">
+        <div class="mt-5 grid gap-4 sm:grid-cols-2">
           <input v-model="projectForm.name" required class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold outline-none focus:border-orange-500 focus:bg-white" placeholder="Tên dự án" />
           <select v-model="projectForm.status" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold outline-none focus:border-orange-500 focus:bg-white">
             <option value="New">Mới</option>
@@ -239,7 +245,7 @@
             <option value="OnHold">Tạm dừng</option>
             <option value="Completed">Hoàn thành</option>
           </select>
-          <textarea v-model="projectForm.description" required rows="3" class="col-span-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold outline-none focus:border-orange-500 focus:bg-white" placeholder="Mô tả dự án"></textarea>
+          <textarea v-model="projectForm.description" required rows="3" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold outline-none focus:border-orange-500 focus:bg-white sm:col-span-2" placeholder="Mô tả dự án"></textarea>
         </div>
 
         <div class="mt-5">
@@ -259,10 +265,15 @@
 
         <div class="mt-5">
           <p class="text-xs font-black uppercase text-slate-500">Thành viên ban đầu</p>
-          <div class="mt-2 grid max-h-48 grid-cols-2 gap-2 overflow-y-auto">
+          <div class="mt-2 grid max-h-48 gap-2 overflow-y-auto sm:grid-cols-2">
             <label v-for="user in taskStore.users" :key="user.id" class="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
               <input v-model="projectForm.members" :value="user.id" type="checkbox" class="h-4 w-4 accent-orange-600" />
-              <img :src="user.avatarUrl" class="h-8 w-8 rounded-full" :alt="user.fullName" />
+              <img
+                :src="avatarFor(user.fullName, user.avatarUrl, '6366f1')"
+                @error="onAvatarError($event, user.fullName, '6366f1')"
+                class="h-8 w-8 rounded-full"
+                :alt="user.fullName"
+              />
               <span class="text-xs font-black text-slate-800">{{ user.fullName }}</span>
             </label>
           </div>
@@ -286,6 +297,7 @@ import { computed, reactive, ref, watch } from 'vue';
 import { ClipboardList, FolderKanban, FolderPlus, Search, X } from '@lucide/vue';
 import { useTaskStore } from '../stores/taskStore';
 import type { Project, Task } from '../services/mockData';
+import { avatarFor, onAvatarError } from '../utils/avatar';
 
 const taskStore = useTaskStore();
 const searchQuery = ref('');

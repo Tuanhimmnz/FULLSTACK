@@ -9,9 +9,11 @@ using Ocelot.DependencyInjection;
 using Ocelot.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
+ConfigureRuntimePort(builder);
 var ocelotConfig = builder.Configuration["OcelotConfig"] ?? "ocelot.json";
-var radminServicesConfig = builder.Configuration["RadminServicesConfig"] ?? "radmin-services.json";
-var runtimeOcelotConfig = PrepareOcelotConfig(ocelotConfig, radminServicesConfig);
+var servicesConfig = builder.Configuration["ServicesConfig"] ?? builder.Configuration["RadminServicesConfig"] ?? "gateway-services.json";
+var gatewayPublicBaseUrl = builder.Configuration["GatewayPublicBaseUrl"];
+var runtimeOcelotConfig = PrepareOcelotConfig(ocelotConfig, servicesConfig, gatewayPublicBaseUrl);
 builder.Configuration.AddJsonFile(runtimeOcelotConfig, optional: false, reloadOnChange: true);
 
 var jwtSecret = builder.Configuration["Jwt:Secret"] ?? "ProjectHub.Shared.Secret.Key.For.Student.Microservices.2026!";
@@ -88,45 +90,58 @@ app.Use(async (context, next) =>
 await app.UseOcelot();
 app.Run();
 
-static string PrepareOcelotConfig(string ocelotConfig, string radminServicesConfig)
+static void ConfigureRuntimePort(WebApplicationBuilder builder)
 {
-    if (!File.Exists(radminServicesConfig))
+    var port = Environment.GetEnvironmentVariable("PORT");
+    if (!string.IsNullOrWhiteSpace(port))
     {
-        return ocelotConfig;
+        builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
     }
+}
 
+static string PrepareOcelotConfig(string ocelotConfig, string servicesConfig, string? gatewayPublicBaseUrl)
+{
     var root = JsonNode.Parse(File.ReadAllText(ocelotConfig))?.AsObject()
         ?? throw new InvalidOperationException($"Cannot parse Ocelot config: {ocelotConfig}");
-    var deployment = JsonNode.Parse(File.ReadAllText(radminServicesConfig))?.AsObject()
-        ?? throw new InvalidOperationException($"Cannot parse Radmin service config: {radminServicesConfig}");
-    var services = deployment["Services"]?.AsObject();
-    if (services is null)
+
+    if (File.Exists(servicesConfig))
     {
-        return ocelotConfig;
-    }
-
-    foreach (var route in root["Routes"]?.AsArray() ?? [])
-    {
-        if (route is not JsonObject routeObject) continue;
-        var upstream = routeObject["UpstreamPathTemplate"]?.GetValue<string>() ?? "";
-        var serviceKey = ResolveServiceKey(upstream);
-        if (serviceKey is null || services[serviceKey] is not JsonObject target) continue;
-
-        var host = target["Host"]?.GetValue<string>();
-        var port = target["Port"]?.GetValue<int?>() ?? 0;
-        if (string.IsNullOrWhiteSpace(host) || port <= 0) continue;
-
-        routeObject["DownstreamHostAndPorts"] = new JsonArray
+        var deployment = JsonNode.Parse(File.ReadAllText(servicesConfig))?.AsObject()
+            ?? throw new InvalidOperationException($"Cannot parse service config: {servicesConfig}");
+        var services = deployment["Services"]?.AsObject();
+        if (services is not null)
         {
-            new JsonObject
+            foreach (var route in root["Routes"]?.AsArray() ?? [])
             {
-                ["Host"] = host,
-                ["Port"] = port
+                if (route is not JsonObject routeObject) continue;
+                var upstream = routeObject["UpstreamPathTemplate"]?.GetValue<string>() ?? "";
+                var serviceKey = ResolveServiceKey(upstream);
+                if (serviceKey is null || services[serviceKey] is not JsonObject target) continue;
+
+                var scheme = target["Scheme"]?.GetValue<string>() ?? routeObject["DownstreamScheme"]?.GetValue<string>() ?? "http";
+                var host = target["Host"]?.GetValue<string>();
+                var port = target["Port"]?.GetValue<int?>() ?? (scheme.Equals("https", StringComparison.OrdinalIgnoreCase) ? 443 : 80);
+                if (string.IsNullOrWhiteSpace(host) || port <= 0) continue;
+
+                routeObject["DownstreamScheme"] = scheme;
+                routeObject["DownstreamHostAndPorts"] = new JsonArray
+                {
+                    new JsonObject
+                    {
+                        ["Host"] = host,
+                        ["Port"] = port
+                    }
+                };
             }
-        };
+        }
+
+        gatewayPublicBaseUrl = deployment["GatewayPublicBaseUrl"]?.GetValue<string>() ?? gatewayPublicBaseUrl;
     }
 
-    var gatewayPublicBaseUrl = deployment["GatewayPublicBaseUrl"]?.GetValue<string>();
+    ApplyServiceTarget(root, "ProjectService", Environment.GetEnvironmentVariable("Services__ProjectService"));
+    ApplyServiceTarget(root, "TaskService", Environment.GetEnvironmentVariable("Services__TaskService"));
+    ApplyServiceTarget(root, "NotifyService", Environment.GetEnvironmentVariable("Services__NotifyService"));
+
     if (!string.IsNullOrWhiteSpace(gatewayPublicBaseUrl))
     {
         root["GlobalConfiguration"] ??= new JsonObject();
@@ -138,12 +153,43 @@ static string PrepareOcelotConfig(string ocelotConfig, string radminServicesConf
     return runtimePath;
 }
 
+static void ApplyServiceTarget(JsonObject root, string serviceKey, string? baseUrl)
+{
+    if (string.IsNullOrWhiteSpace(baseUrl) || !Uri.TryCreate(baseUrl, UriKind.Absolute, out var uri))
+    {
+        return;
+    }
+
+    var port = uri.IsDefaultPort
+        ? uri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase) ? 443 : 80
+        : uri.Port;
+
+    foreach (var route in root["Routes"]?.AsArray() ?? [])
+    {
+        if (route is not JsonObject routeObject) continue;
+        var upstream = routeObject["UpstreamPathTemplate"]?.GetValue<string>() ?? "";
+        if (!string.Equals(ResolveServiceKey(upstream), serviceKey, StringComparison.OrdinalIgnoreCase)) continue;
+
+        routeObject["DownstreamScheme"] = uri.Scheme;
+        routeObject["DownstreamHostAndPorts"] = new JsonArray
+        {
+            new JsonObject
+            {
+                ["Host"] = uri.Host,
+                ["Port"] = port
+            }
+        };
+    }
+}
+
 static string? ResolveServiceKey(string upstreamPath)
 {
     if (upstreamPath.Contains("/api/auth", StringComparison.OrdinalIgnoreCase)
         || upstreamPath.Contains("/api/users", StringComparison.OrdinalIgnoreCase)
         || upstreamPath.Contains("/api/notifications", StringComparison.OrdinalIgnoreCase)
+        || upstreamPath.Contains("/api/diagnostics", StringComparison.OrdinalIgnoreCase)
         || upstreamPath.Contains("/api/activity-logs", StringComparison.OrdinalIgnoreCase)
+        || upstreamPath.Contains("/api/internal", StringComparison.OrdinalIgnoreCase)
         || upstreamPath.Contains("/comments", StringComparison.OrdinalIgnoreCase))
     {
         return "NotifyService";

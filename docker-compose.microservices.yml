@@ -17,6 +17,10 @@ services:
     environment:
       ASPNETCORE_URLS: http://+:5001
       ConnectionStrings__ProjectDb: "Server=sqlserver,1433;Database=ProjectDB;User Id=sa;Password=ProjectHub@2026;TrustServerCertificate=True;"
+      Jwt__Secret: ${JWT_SECRET:-ProjectHub.Shared.Secret.Key.For.Student.Microservices.2026!}
+      Jwt__Issuer: ${JWT_ISSUER:-ProjectHub}
+      Jwt__Audience: ${JWT_AUDIENCE:-ProjectHub.Client}
+      Services__NotifyService: ${NOTIFY_SERVICE_URL:-http://notify-service:5003}
     depends_on:
       - sqlserver
     restart: unless-stopped
@@ -29,6 +33,9 @@ services:
     environment:
       ASPNETCORE_URLS: http://+:5002
       ConnectionStrings__TaskDb: "Server=sqlserver,1433;Database=TaskDB;User Id=sa;Password=ProjectHub@2026;TrustServerCertificate=True;"
+      Jwt__Secret: ${JWT_SECRET:-ProjectHub.Shared.Secret.Key.For.Student.Microservices.2026!}
+      Jwt__Issuer: ${JWT_ISSUER:-ProjectHub}
+      Jwt__Audience: ${JWT_AUDIENCE:-ProjectHub.Client}
       Services__NotifyService: ${NOTIFY_SERVICE_URL:-http://notify-service:5003}
     depends_on:
       - sqlserver
@@ -42,6 +49,12 @@ services:
     environment:
       ASPNETCORE_URLS: http://+:5003
       ConnectionStrings__NotifyDb: "Server=sqlserver,1433;Database=NotifyDB;User Id=sa;Password=ProjectHub@2026;TrustServerCertificate=True;"
+      Jwt__Secret: ${JWT_SECRET:-ProjectHub.Shared.Secret.Key.For.Student.Microservices.2026!}
+      Jwt__Issuer: ${JWT_ISSUER:-ProjectHub}
+      Jwt__Audience: ${JWT_AUDIENCE:-ProjectHub.Client}
+      Services__ProjectService: ${PROJECT_SERVICE_URL:-http://project-service:5001}
+      Services__TaskService: ${TASK_SERVICE_URL:-http://task-service:5002}
+      Services__NotifyService: ${NOTIFY_SERVICE_URL:-http://notify-service:5003}
     depends_on:
       - sqlserver
     restart: unless-stopped
@@ -54,18 +67,14 @@ services:
     environment:
       ASPNETCORE_URLS: http://+:7000
       OcelotConfig: ocelot.docker.json
-      RadminServicesConfig: /app/radmin-services.json
-    volumes:
-      - ./deployment/radmin-services.json:/app/radmin-services.json:ro
-    restart: unless-stopped
-
-  frontend:
-    build:
-      context: ./frontend
-    ports:
-      - "8080:80"
+      GatewayPublicBaseUrl: ${GATEWAY_PUBLIC_BASE_URL:-http://localhost:7000}
+      Jwt__Secret: ${JWT_SECRET:-ProjectHub.Shared.Secret.Key.For.Student.Microservices.2026!}
+      Jwt__Issuer: ${JWT_ISSUER:-ProjectHub}
+      Jwt__Audience: ${JWT_AUDIENCE:-ProjectHub.Client}
     depends_on:
-      - api-gateway
+      - project-service
+      - task-service
+      - notify-service
     restart: unless-stopped
 
 volumes:

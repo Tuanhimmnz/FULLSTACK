@@ -48,7 +48,7 @@ async function handleLogin() {
   try {
     const success = await taskStore.loginAction(email.value, password.value);
     if (success) {
-      router.push('/');
+      router.push('/dashboard');
     }
   } catch (error: any) {
     console.error(error);
@@ -84,7 +84,7 @@ async function handleLogin() {
       <!-- Notification Banner -->
       <Transition name="expand">
         <div v-if="errorMsg" class="mb-6 bg-red-950/30 border border-red-900/50 rounded-2xl p-4 flex items-start space-x-3 text-red-300 text-xs">
-          <AlertCircle class="w-4.5 h-4.5 mt-0.5 shrink-0 text-red-400" />
+          <AlertCircle class="size-5 mt-0.5 shrink-0 text-red-400" />
           <span class="leading-relaxed font-semibold">{{ errorMsg }}</span>
         </div>
       </Transition>
@@ -100,7 +100,7 @@ async function handleLogin() {
             required
             class="peer w-full bg-slate-900/50 border border-slate-700/80 rounded-xl py-3.5 pl-10 pr-4 text-sm text-white placeholder-transparent focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all font-semibold"
           />
-          <Mail class="w-4.5 h-4.5 text-slate-500 peer-focus:text-indigo-400 transition-colors absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <Mail class="size-5 text-slate-500 peer-focus:text-indigo-400 transition-colors absolute left-3.5 top-1/2 -translate-y-1/2" />
           
           <label 
             for="email_input"
@@ -123,14 +123,14 @@ async function handleLogin() {
             required
             class="peer w-full bg-slate-900/50 border border-slate-700/80 rounded-xl py-3.5 pl-10 pr-10 text-sm text-white placeholder-transparent focus:outline-none focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 transition-all font-semibold"
           />
-          <Lock class="w-4.5 h-4.5 text-slate-500 peer-focus:text-indigo-400 transition-colors absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <Lock class="size-5 text-slate-500 peer-focus:text-indigo-400 transition-colors absolute left-3.5 top-1/2 -translate-y-1/2" />
           <button 
             type="button" 
             @click="showPassword = !showPassword"
             class="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 focus:outline-none z-20"
           >
-            <Eye v-if="!showPassword" class="w-4.5 h-4.5" />
-            <EyeOff v-else class="w-4.5 h-4.5" />
+            <Eye v-if="!showPassword" class="size-5" />
+            <EyeOff v-else class="size-5" />
           </button>
           
           <label 

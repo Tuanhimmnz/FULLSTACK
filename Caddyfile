@@ -1,0 +1,27 @@
+:80 {
+    handle /api/* {
+        reverse_proxy 127.0.0.1:7000
+    }
+
+	handle /health {
+		reverse_proxy 127.0.0.1:7000
+	}
+
+	handle_path /project/* {
+		reverse_proxy 127.0.0.1:5001
+	}
+
+	handle_path /task/* {
+		reverse_proxy 127.0.0.1:5002
+	}
+
+    handle_path /notify/* {
+        reverse_proxy 127.0.0.1:5003
+    }
+
+    handle {
+        root * {$FRONTEND_ROOT:/var/www/sprintflow}
+        try_files {path} /index.html
+        file_server
+    }
+}

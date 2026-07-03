@@ -1,4 +1,5 @@
 using System.Data;
+using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -6,6 +7,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
+ConfigureRuntimePort(builder);
 var jwtSecret = builder.Configuration["Jwt:Secret"] ?? "ProjectHub.Shared.Secret.Key.For.Student.Microservices.2026!";
 var issuer = builder.Configuration["Jwt:Issuer"] ?? "ProjectHub";
 var audience = builder.Configuration["Jwt:Audience"] ?? "ProjectHub.Client";
@@ -31,6 +33,7 @@ app.UseAuthorization();
 var db = new SqlDb(app.Configuration.GetConnectionString("TaskDb")!);
 await db.EnsureDatabaseAsync("TaskDB");
 await EnsureSchemaAsync(db);
+await SeedTasksAsync(db);
 
 app.MapGet("/health", () => Results.Ok(new { service = "TaskService", status = "ok" }));
 
@@ -70,6 +73,7 @@ app.MapPost("/api/tasks", async (TaskCreateRequest request, ClaimsPrincipal prin
         P("@projectId", request.ProjectId), P("@assigneeId", (object?)request.AssigneeId ?? DBNull.Value),
         P("@creatorId", creatorId), P("@createdAt", createdAt), P("@labels", labels),
         P("@estimatedHours", request.EstimatedHours));
+    await AddTaskHistoryAsync(conn, id, user, "task.created", null, request.Status, $"Created task {request.Title}");
 
     if (!string.IsNullOrWhiteSpace(request.AssigneeId))
     {
@@ -104,6 +108,7 @@ app.MapPut("/api/tasks/{id}", async (string id, TaskUpdateRequest request, Claim
         P("@status", request.Status), P("@priority", request.Priority), P("@dueDate", request.DueDate),
         P("@projectId", request.ProjectId), P("@assigneeId", (object?)request.AssigneeId ?? DBNull.Value),
         P("@creatorId", request.CreatorId), P("@labels", labels), P("@estimatedHours", request.EstimatedHours));
+    await AddTaskHistoryAsync(conn, id, user, "task.updated", oldTask.Status, request.Status, $"Updated task {request.Title}");
 
     if (oldTask.Status != request.Status)
     {
@@ -115,6 +120,18 @@ app.MapPut("/api/tasks/{id}", async (string id, TaskUpdateRequest request, Claim
             request.ProjectId,
             SplitIds(request.AssigneeId).Append(request.CreatorId).Distinct().ToList(),
             user));
+    }
+    if (oldTask.AssigneeId != request.AssigneeId && !string.IsNullOrWhiteSpace(request.AssigneeId))
+    {
+        await PublishTaskEventAsync(httpClientFactory, new TaskEventRequest(
+            "task.assigned",
+            "Task assigned",
+            $"{user.FullName} assigned task \"{request.Title}\".",
+            id,
+            request.ProjectId,
+            SplitIds(request.AssigneeId),
+            user));
+        await AddTaskHistoryAsync(conn, id, user, "task.assigned", oldTask.AssigneeId, request.AssigneeId, $"Assigned task {request.Title}");
     }
 
     var updated = await QuerySingleAsync<TaskRow>(conn, "SELECT * FROM Tasks WHERE id=@id", P("@id", id));
@@ -130,6 +147,7 @@ app.MapPatch("/api/tasks/{id}/status", async (string id, StatusRequest request, 
     if (task is null) return Results.NotFound();
     if (!IsManager(user) && !SplitIds(task.AssigneeId).Contains(user.Id)) return Results.Forbid();
     await ExecuteAsync(conn, "UPDATE Tasks SET status=@status WHERE id=@id", P("@status", request.Status), P("@id", id));
+    await AddTaskHistoryAsync(conn, id, user, "task.status.changed", task.Status, request.Status, $"Status changed from {task.Status} to {request.Status}");
     await PublishTaskEventAsync(httpClientFactory, new TaskEventRequest(
         "task.status.changed",
         "Trạng thái công việc thay đổi",
@@ -151,31 +169,55 @@ app.MapDelete("/api/tasks/{id}", async (string id, ClaimsPrincipal principal) =>
 
 app.MapPost("/api/tasks/{id}/subtasks", async (string id, SubTaskRequest request, ClaimsPrincipal principal) =>
 {
-    if (!IsManager(CurrentUser(principal))) return Results.Forbid();
+    var user = CurrentUser(principal);
+    if (!IsManager(user)) return Results.Forbid();
     var subId = "sub_" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
     await using var conn = await db.OpenAsync();
     await ExecuteAsync(conn, "INSERT INTO SubTasks(id, taskId, title, isCompleted) VALUES(@id,@taskId,@title,0)",
         P("@id", subId), P("@taskId", id), P("@title", request.Title));
+    await AddTaskHistoryAsync(conn, id, user, "subtask.created", null, request.Title, $"Created subtask {request.Title}");
     return Results.Created($"/api/tasks/{id}/subtasks/{subId}", new SubTaskClientDto(subId, request.Title, false));
+}).RequireAuthorization();
+
+app.MapPut("/api/tasks/{id}/subtasks/{subTaskId}", async (string id, string subTaskId, SubTaskUpdateRequest request, ClaimsPrincipal principal) =>
+{
+    var user = CurrentUser(principal);
+    if (IsViewer(user)) return Results.Forbid();
+    await using var conn = await db.OpenAsync();
+    var current = await QuerySingleAsync<SubTaskDto>(conn,
+        "SELECT id, taskId, title, CAST(isCompleted AS bit) AS isCompleted FROM SubTasks WHERE id=@id AND taskId=@taskId",
+        P("@id", subTaskId), P("@taskId", id));
+    if (current is null) return Results.NotFound();
+
+    var title = string.IsNullOrWhiteSpace(request.Title) ? current.Title : request.Title.Trim();
+    var isCompleted = request.IsCompleted ?? current.IsCompleted;
+    await ExecuteAsync(conn, "UPDATE SubTasks SET title=@title, isCompleted=@isCompleted WHERE id=@id AND taskId=@taskId",
+        P("@title", title), P("@isCompleted", isCompleted), P("@id", subTaskId), P("@taskId", id));
+    await AddTaskHistoryAsync(conn, id, user, "subtask.updated", current.Title, title, $"Updated subtask {title}");
+    return Results.Ok(new SubTaskClientDto(subTaskId, title, isCompleted));
 }).RequireAuthorization();
 
 app.MapPut("/api/tasks/{id}/subtasks/{subTaskId}/toggle", async (string id, string subTaskId, ClaimsPrincipal principal) =>
 {
-    if (IsViewer(CurrentUser(principal))) return Results.Forbid();
+    var user = CurrentUser(principal);
+    if (IsViewer(user)) return Results.Forbid();
     await using var conn = await db.OpenAsync();
     await ExecuteAsync(conn, "UPDATE SubTasks SET isCompleted = CASE WHEN isCompleted=1 THEN 0 ELSE 1 END WHERE id=@id AND taskId=@taskId", P("@id", subTaskId), P("@taskId", id));
+    await AddTaskHistoryAsync(conn, id, user, "subtask.toggled", null, subTaskId, $"Toggled subtask {subTaskId}");
     return Results.Ok();
 }).RequireAuthorization();
 
 app.MapDelete("/api/tasks/{id}/subtasks/{subTaskId}", async (string id, string subTaskId, ClaimsPrincipal principal) =>
 {
-    if (!IsManager(CurrentUser(principal))) return Results.Forbid();
+    var user = CurrentUser(principal);
+    if (!IsManager(user)) return Results.Forbid();
     await using var conn = await db.OpenAsync();
     await ExecuteAsync(conn, "DELETE FROM SubTasks WHERE id=@id AND taskId=@taskId", P("@id", subTaskId), P("@taskId", id));
+    await AddTaskHistoryAsync(conn, id, user, "subtask.deleted", subTaskId, null, $"Deleted subtask {subTaskId}");
     return Results.Ok();
 }).RequireAuthorization();
 
-app.MapPost("/api/tasks/{id}/worklogs", async (string id, WorkLogRequest request, ClaimsPrincipal principal) =>
+app.MapPost("/api/tasks/{id}/worklogs", async (string id, WorkLogRequest request, ClaimsPrincipal principal, IHttpClientFactory httpClientFactory) =>
 {
     var user = CurrentUser(principal);
     if (IsViewer(user)) return Results.Forbid();
@@ -187,10 +229,56 @@ app.MapPost("/api/tasks/{id}/worklogs", async (string id, WorkLogRequest request
         P("@id", logId), P("@taskId", id), P("@userName", user.FullName), P("@hours", request.Hours),
         P("@description", request.Description), P("@createdAt", createdAt));
     await ExecuteAsync(conn, "UPDATE Tasks SET loggedHours = ISNULL(loggedHours,0) + @hours WHERE id=@taskId", P("@hours", request.Hours), P("@taskId", id));
+    var task = await QuerySingleAsync<TaskRow>(conn, "SELECT * FROM Tasks WHERE id=@id", P("@id", id));
+    await AddTaskHistoryAsync(conn, id, user, "worklog.created", null, request.Hours.ToString("0.##"), $"Logged {request.Hours:0.##}h: {request.Description}");
+    if (task is not null)
+    {
+        await PublishTaskEventAsync(httpClientFactory, new TaskEventRequest(
+            "worklog.created",
+            "Worklog created",
+            $"{user.FullName} logged {request.Hours:0.##}h on \"{task.Title}\".",
+            id,
+            task.ProjectId,
+            SplitIds(task.AssigneeId).Append(task.CreatorId).Distinct().ToList(),
+            user));
+    }
     return Results.Created($"/api/tasks/{id}/worklogs/{logId}", new WorkLogClientDto(logId, user.FullName, request.Hours, request.Description, createdAt));
 }).RequireAuthorization();
 
+app.MapGet("/api/tasks/{id}/history", async (string id) =>
+{
+    await using var conn = await db.OpenAsync();
+    var history = await QueryAsync<TaskHistoryDto>(conn,
+        "SELECT TOP 100 id, taskId, userId, userName, action, fromValue, toValue, message, createdAt FROM TaskHistory WHERE taskId=@taskId ORDER BY createdAt DESC",
+        P("@taskId", id));
+    return Results.Ok(history);
+}).RequireAuthorization();
+
+app.MapGet("/api/tasks/deadline-alerts", async () =>
+{
+    var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+    var limit = DateTime.UtcNow.AddDays(3).ToString("yyyy-MM-dd");
+    await using var conn = await db.OpenAsync();
+    var tasks = await QueryAsync<TaskRow>(conn,
+        """
+        SELECT * FROM Tasks
+        WHERE status <> 'Done' AND dueDate >= @today AND dueDate <= @limit
+        ORDER BY dueDate
+        """,
+        P("@today", today), P("@limit", limit));
+    return Results.Ok(tasks.Select(t => ToDto(t, [], [])));
+}).RequireAuthorization();
+
 app.Run();
+
+static void ConfigureRuntimePort(WebApplicationBuilder builder)
+{
+    var port = Environment.GetEnvironmentVariable("PORT");
+    if (!string.IsNullOrWhiteSpace(port))
+    {
+        builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+    }
+}
 
 static TokenValidationParameters TokenValidation(string secret, string issuer, string audience) => new()
 {
@@ -222,6 +310,24 @@ static async Task PublishTaskEventAsync(IHttpClientFactory factory, TaskEventReq
     {
         // Service must continue if notification service is temporarily down.
     }
+}
+
+static Task AddTaskHistoryAsync(SqlConnection conn, string taskId, UserDto user, string action, string? fromValue, string? toValue, string message)
+{
+    return ExecuteAsync(conn,
+        """
+        INSERT INTO TaskHistory(id, taskId, userId, userName, action, fromValue, toValue, message, createdAt)
+        VALUES(@id,@taskId,@userId,@userName,@action,@fromValue,@toValue,@message,@createdAt)
+        """,
+        P("@id", "hist_" + DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() + "_" + Guid.NewGuid().ToString("N")[..6]),
+        P("@taskId", taskId),
+        P("@userId", user.Id),
+        P("@userName", user.FullName),
+        P("@action", action),
+        P("@fromValue", (object?)fromValue ?? DBNull.Value),
+        P("@toValue", (object?)toValue ?? DBNull.Value),
+        P("@message", message),
+        P("@createdAt", DateTimeOffset.UtcNow.ToString("O")));
 }
 
 static TaskDto ToDto(TaskRow row, List<SubTaskClientDto> subTasks, List<WorkLogClientDto> workLogs) => new(
@@ -266,7 +372,107 @@ static async Task EnsureSchemaAsync(SqlDb db)
             description NVARCHAR(MAX),
             createdAt NVARCHAR(50)
         );
+        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='TaskHistory' AND xtype='U')
+        CREATE TABLE TaskHistory(
+            id NVARCHAR(50) PRIMARY KEY,
+            taskId NVARCHAR(50) NOT NULL,
+            userId NVARCHAR(50),
+            userName NVARCHAR(100),
+            action NVARCHAR(100),
+            fromValue NVARCHAR(500),
+            toValue NVARCHAR(500),
+            message NVARCHAR(MAX),
+            createdAt NVARCHAR(100)
+        );
         """);
+}
+
+static async Task SeedTasksAsync(SqlDb db)
+{
+    await using var conn = await db.OpenAsync();
+    var today = DateTimeOffset.UtcNow;
+    var projectIds = new[] { "p_sprintflow", "p_mobile", "p_data", "p_quality", "p_devops" };
+    var titles = new[]
+    {
+        "Thiết kế luồng đăng nhập JWT và refresh profile",
+        "Xây dựng Notification Center lọc all unread read",
+        "Comment task có sửa xóa và tag thành viên",
+        "Gateway route tất cả API qua một endpoint",
+        "Kanban drag drop và cập nhật status",
+        "Subtask checklist và tính tiến độ task",
+        "Worklog ghi giờ làm việc theo task",
+        "Deadline warning và cảnh báo task sắp hạn",
+        "Burndown chart cho sprint hiện tại",
+        "Trang Admin quản lý tài khoản và reset mật khẩu",
+        "Profile page cập nhật hồ sơ người dùng",
+        "Diagnostics health check 3 service",
+        "Responsive mobile cho dashboard và kanban",
+        "Seed dữ liệu demo 20 tài khoản",
+        "Swagger và health endpoint từng service",
+        "Docker compose production trên VPS",
+        "Caddy reverse proxy và HTTPS",
+        "F12 checklist chứng minh gọi Gateway",
+        "Activity log tự động cho comment notification",
+        "Notification event từ Project Service",
+        "Notification event từ Task Service",
+        "Phân quyền Viewer không được sửa task",
+        "Tìm kiếm task theo người phụ trách và nhãn",
+        "Tài liệu báo cáo và kịch bản demo"
+    };
+    var assignees = new[]
+    {
+        "u_backend_01,u_frontend_01", "u_frontend_01,u_uiux_01", "u_backend_02,u_qa_01", "u_devops_01",
+        "u_frontend_02,u_qa_02", "u_backend_01", "u_member_01,u_member_02", "u_ba_01,u_qa_01"
+    };
+    var statuses = new[] { "Backlog", "ToDo", "InProgress", "Review", "Done" };
+    var priorities = new[] { "High", "Medium", "Low", "Medium" };
+    var labels = new[] { "Phân tích,Thiết kế", "Lập trình,Kiểm thử", "Tài liệu,Họp hành", "DevOps,Kiểm thử" };
+
+    for (var i = 1; i <= titles.Length; i++)
+    {
+        var taskId = $"demo_task_{i:000}";
+        await ExecuteAsync(conn, "DELETE FROM SubTasks WHERE taskId=@taskId", P("@taskId", taskId));
+        await ExecuteAsync(conn, "DELETE FROM WorkLogs WHERE taskId=@taskId", P("@taskId", taskId));
+        await ExecuteAsync(conn, "DELETE FROM TaskHistory WHERE taskId=@taskId", P("@taskId", taskId));
+        await ExecuteAsync(conn, "DELETE FROM Tasks WHERE id=@id", P("@id", taskId));
+
+        var status = statuses[(i - 1) % statuses.Length];
+        var priority = priorities[(i - 1) % priorities.Length];
+        var dueDate = today.AddDays((i % 9) - 3).ToString("yyyy-MM-dd");
+        var projectId = projectIds[(i - 1) % projectIds.Length];
+        var estimated = 6 + (i % 7) * 2;
+        var logged = status == "Done" ? estimated : Math.Max(1, estimated - (i % 5) - 2);
+
+        await ExecuteAsync(conn,
+            """
+            INSERT INTO Tasks(id,title,description,status,priority,dueDate,projectId,assigneeId,creatorId,createdAt,labels,estimatedHours,loggedHours)
+            VALUES(@id,@title,@description,@status,@priority,@dueDate,@projectId,@assigneeId,@creatorId,@createdAt,@labels,@estimatedHours,@loggedHours)
+            """,
+            P("@id", taskId), P("@title", titles[i - 1]),
+            P("@description", $"Task demo {i:00} có dữ liệu chi tiết: subtask, worklog, label, priority và người phụ trách để trình bày với thầy."),
+            P("@status", status), P("@priority", priority), P("@dueDate", dueDate), P("@projectId", projectId),
+            P("@assigneeId", assignees[(i - 1) % assignees.Length]), P("@creatorId", "u_pm"),
+            P("@createdAt", today.AddDays(-i).ToString("yyyy-MM-dd")), P("@labels", labels[(i - 1) % labels.Length]),
+            P("@estimatedHours", estimated), P("@loggedHours", logged));
+
+        for (var j = 1; j <= 3; j++)
+        {
+            await ExecuteAsync(conn,
+                "INSERT INTO SubTasks(id, taskId, title, isCompleted) VALUES(@id,@taskId,@title,@isCompleted)",
+                P("@id", $"{taskId}_sub_{j}"), P("@taskId", taskId),
+                P("@title", j == 1 ? "Phân tích yêu cầu" : j == 2 ? "Lập trình và review" : "Kiểm thử nghiệm thu"),
+                P("@isCompleted", status == "Done" || (status == "Review" && j < 3) || (status == "InProgress" && j == 1) ? 1 : 0));
+        }
+
+        await ExecuteAsync(conn,
+            "INSERT INTO WorkLogs(id, taskId, userName, hours, description, createdAt) VALUES(@id,@taskId,@userName,@hours,@description,@createdAt)",
+            P("@id", $"{taskId}_log_1"), P("@taskId", taskId), P("@userName", "Nguyễn Minh Khang"),
+            P("@hours", Math.Max(1, logged / 2)), P("@description", "Phân tích và chia đầu việc"), P("@createdAt", today.AddDays(-2).ToString("yyyy-MM-dd")));
+        await ExecuteAsync(conn,
+            "INSERT INTO WorkLogs(id, taskId, userName, hours, description, createdAt) VALUES(@id,@taskId,@userName,@hours,@description,@createdAt)",
+            P("@id", $"{taskId}_log_2"), P("@taskId", taskId), P("@userName", "Thành viên phụ trách"),
+            P("@hours", Math.Max(1, logged / 2)), P("@description", "Xử lý implementation và test"), P("@createdAt", today.AddDays(-1).ToString("yyyy-MM-dd")));
+    }
 }
 
 static async Task<List<T>> QueryAsync<T>(SqlConnection conn, string sql, params SqlParameter[] parameters)
@@ -303,6 +509,8 @@ static T Map<T>(IDataRecord row)
         return (T)(object)new SubTaskDto(Get("id")!.ToString()!, Get("taskId")!.ToString()!, Get("title")!.ToString()!, Convert.ToBoolean(Get("isCompleted") ?? false));
     if (typeof(T) == typeof(WorkLogDto))
         return (T)(object)new WorkLogDto(Get("id")!.ToString()!, Get("taskId")!.ToString()!, Get("userName")?.ToString() ?? "", Convert.ToDouble(Get("hours") ?? 0), Get("description")?.ToString() ?? "", Get("createdAt")?.ToString() ?? "");
+    if (typeof(T) == typeof(TaskHistoryDto))
+        return (T)(object)new TaskHistoryDto(Get("id")!.ToString()!, Get("taskId")!.ToString()!, Get("userId")?.ToString(), Get("userName")?.ToString(), Get("action")?.ToString() ?? "", Get("fromValue")?.ToString(), Get("toValue")?.ToString(), Get("message")?.ToString() ?? "", Get("createdAt")?.ToString() ?? "");
     throw new NotSupportedException(typeof(T).Name);
 }
 
@@ -346,6 +554,7 @@ record TaskCreateRequest(string Title, string Description, string Status, string
 record TaskUpdateRequest(string Id, string Title, string Description, string Status, string Priority, string DueDate, string ProjectId, string? AssigneeId, string CreatorId, List<string>? Labels, double EstimatedHours);
 record StatusRequest(string Status);
 record SubTaskRequest(string Title);
+record SubTaskUpdateRequest(string? Title, bool? IsCompleted);
 record WorkLogRequest(double Hours, string Description);
 record TaskRow(string Id, string Title, string Description, string Status, string Priority, string DueDate, string ProjectId, string? AssigneeId, string CreatorId, string CreatedAt, string Labels, double EstimatedHours, double LoggedHours);
 record TaskDto(string Id, string Title, string Description, string Status, string Priority, string DueDate, string ProjectId, string? AssigneeId, string CreatorId, string CreatedAt, List<string> Labels, List<SubTaskClientDto> SubTasks, double EstimatedHours, double LoggedHours, List<WorkLogClientDto> WorkLogs, List<object> Comments);
@@ -353,4 +562,5 @@ record SubTaskDto(string Id, string TaskId, string Title, bool IsCompleted);
 record SubTaskClientDto(string Id, string Title, bool IsCompleted);
 record WorkLogDto(string Id, string TaskId, string UserName, double Hours, string Description, string CreatedAt);
 record WorkLogClientDto(string Id, string UserName, double Hours, string Description, string CreatedAt);
+record TaskHistoryDto(string Id, string TaskId, string? UserId, string? UserName, string Action, string? FromValue, string? ToValue, string Message, string CreatedAt);
 record TaskEventRequest(string Type, string Title, string Message, string? TaskId, string? ProjectId, List<string> RecipientUserIds, UserDto? Actor);

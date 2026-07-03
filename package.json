@@ -1,14 +1,18 @@
 {
-  "name": "project-management-system",
+  "name": "sprintflow-project-management",
   "version": "1.0.0",
-  "description": "Project Management System with separated frontend and backend",
+  "description": "SprintFlow project management microservices",
   "private": true,
   "type": "module",
   "scripts": {
     "install:frontend": "npm install --prefix frontend",
-    "install:backend": "npm install --prefix backend",
-    "install-all": "npm install && npm run install:frontend && npm run install:backend",
-    "seed:backend": "npm run seed --prefix backend",
-    "dev": "node run-dev.js"
+    "frontend:dev": "npm run dev --prefix frontend -- --host 0.0.0.0 --port 8080",
+    "frontend:build": "npm run build --prefix frontend",
+    "docker:full": "docker compose -f docker-compose.microservices.yml up -d --build",
+    "docker:down": "docker compose -f docker-compose.microservices.yml down",
+    "docker:logs": "docker compose -f docker-compose.microservices.yml logs -f --tail=100",
+    "check": "powershell.exe -ExecutionPolicy Bypass -File ./scripts/check-sprintflow-health.ps1",
+    "test:flow": "powershell.exe -ExecutionPolicy Bypass -File ./scripts/test-sprintflow-flow.ps1",
+    "demo:windows": "powershell.exe -ExecutionPolicy Bypass -File ./scripts/open-demo-windows.ps1"
   }
 }

@@ -7,6 +7,14 @@ export interface User {
   email?: string;
 }
 
+export interface UserCredential {
+  id: string;
+  fullName: string;
+  email: string;
+  role: string;
+  password: string;
+}
+
 export interface Project {
   id: string;
   name: string;

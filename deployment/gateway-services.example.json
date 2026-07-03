@@ -1,0 +1,20 @@
+{
+  "GatewayPublicBaseUrl": "http://localhost:7000",
+  "Services": {
+    "ProjectService": {
+      "Scheme": "http",
+      "Host": "localhost",
+      "Port": 5001
+    },
+    "TaskService": {
+      "Scheme": "http",
+      "Host": "localhost",
+      "Port": 5002
+    },
+    "NotifyService": {
+      "Scheme": "http",
+      "Host": "localhost",
+      "Port": 5003
+    }
+  }
+}

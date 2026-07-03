@@ -1,6 +1,6 @@
 <template>
   <div class="flex-1 min-h-screen bg-slate-50">
-    <header class="bg-white border-b border-slate-100 px-8 py-5 flex items-center justify-between sticky top-0 z-10">
+    <header class="bg-white border-b border-slate-100 px-4 py-5 flex flex-col gap-4 sticky top-0 z-10 sm:flex-row sm:items-center sm:justify-between lg:px-8">
       <div>
         <h1 class="text-lg font-bold text-slate-900">Thông báo</h1>
         <p class="text-xs text-slate-500 mt-1">
@@ -29,7 +29,7 @@
       </div>
     </header>
 
-    <section class="px-8 py-5 border-b border-slate-100 bg-white/70">
+    <section class="px-4 py-5 border-b border-slate-100 bg-white/70 lg:px-8">
       <div class="inline-flex rounded-lg border border-slate-200 bg-white p-1">
         <button
           v-for="filter in filters"
@@ -44,7 +44,7 @@
       </div>
     </section>
 
-    <main class="px-8 py-6">
+    <main class="px-4 py-6 lg:px-8">
       <div v-if="filteredNotifications.length > 0" class="space-y-3 max-w-4xl">
         <article
           v-for="notification in filteredNotifications"

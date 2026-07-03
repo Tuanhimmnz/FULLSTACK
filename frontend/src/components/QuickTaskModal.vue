@@ -35,7 +35,7 @@
           </div>
 
           <!-- Project & Assignee Grid -->
-          <div class="grid grid-cols-2 gap-4">
+          <div class="grid gap-4 sm:grid-cols-2">
             <!-- Project -->
             <div class="relative w-full">
               <!-- Regular Dropdown Selector with Add Button -->
@@ -133,7 +133,11 @@
                       v-model="selectedAssigneeIds"
                       class="w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-500 cursor-pointer"
                     />
-                    <img :src="user.avatarUrl" class="w-5 h-5 rounded-full shrink-0" />
+                    <img
+                      :src="avatarFor(user.fullName, user.avatarUrl, '6366f1')"
+                      @error="onAvatarError($event, user.fullName, '6366f1')"
+                      class="w-5 h-5 rounded-full shrink-0"
+                    />
                     <div class="min-w-0">
                       <p class="text-xs font-bold text-slate-705 truncate">{{ user.fullName }}</p>
                       <p class="text-[9px] text-slate-400 font-medium truncate">{{ user.role }}</p>
@@ -153,7 +157,7 @@
           </div>
 
           <!-- Priority, Due Date & Estimated Hours Grid -->
-          <div class="grid grid-cols-3 gap-3">
+          <div class="grid gap-3 sm:grid-cols-3">
             <!-- Priority -->
             <div class="relative w-full">
               <select
@@ -289,6 +293,7 @@
 import { ref, watch, computed } from 'vue';
 import { X, Plus, Check } from '@lucide/vue';
 import { useTaskStore } from '../stores/taskStore';
+import { avatarFor, onAvatarError } from '../utils/avatar';
 
 // Sóng nước ripple cho button
 function handleButtonClick(event: MouseEvent) {

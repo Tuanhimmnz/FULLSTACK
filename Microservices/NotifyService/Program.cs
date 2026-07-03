@@ -7,6 +7,7 @@ using Microsoft.Data.SqlClient;
 using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
+ConfigureRuntimePort(builder);
 var jwtSecret = builder.Configuration["Jwt:Secret"] ?? "ProjectHub.Shared.Secret.Key.For.Student.Microservices.2026!";
 var issuer = builder.Configuration["Jwt:Issuer"] ?? "ProjectHub";
 var audience = builder.Configuration["Jwt:Audience"] ?? "ProjectHub.Client";
@@ -17,6 +18,18 @@ builder.Services.AddCors(options =>
 });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
+builder.Services.AddHttpClient("project", client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Services:ProjectService"] ?? "http://localhost:5001");
+});
+builder.Services.AddHttpClient("task", client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Services:TaskService"] ?? "http://localhost:5002");
+});
+builder.Services.AddHttpClient("notify", client =>
+{
+    client.BaseAddress = new Uri(builder.Configuration["Services:NotifyService"] ?? "http://localhost:5003");
+});
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -153,7 +166,7 @@ app.MapPut("/api/users/{id}/role", async (string id, RoleUpdateRequest request, 
     if (actor is null) return Results.Unauthorized();
     if (!IsManager(actor)) return Results.Forbid();
 
-    var allowedRoles = new[] { "Admin", "Project Manager", "Member", "Developer", "Viewer" };
+    var allowedRoles = new[] { "Admin", "Project Manager", "Backend Dev", "Frontend Lead", "Business Analyst", "DevOps Engineer", "QA Engineer", "UI/UX Designer", "Member", "Developer", "Viewer" };
     var role = (request.Role ?? "").Trim();
     if (!allowedRoles.Contains(role)) return Results.BadRequest(new { error = "Vai trò không hợp lệ" });
 
@@ -299,8 +312,110 @@ app.MapPost("/api/internal/task-events", async (TaskEventRequest request) =>
     {
         await InsertNotificationAsync(conn, userId, request.Title, request.Message, request.Type, request.TaskId, request.ProjectId, request.Actor);
     }
+    await LogSystemAsync(conn, request.Actor, request.Type, "task-event", request.TaskId, request.TaskId, request.Message);
     return Results.Accepted();
 });
+
+app.MapPost("/api/internal/project-events", async (ProjectEventRequest request) =>
+{
+    await using var conn = await db.OpenAsync();
+    foreach (var userId in request.RecipientUserIds.Distinct().Where(id => !string.IsNullOrWhiteSpace(id)))
+    {
+        await InsertNotificationAsync(conn, userId, request.Title, request.Message, request.Type, null, request.ProjectId, request.Actor);
+    }
+    await LogSystemAsync(conn, request.Actor, request.Type, "project-event", request.ProjectId, null, request.Message);
+    return Results.Accepted();
+});
+
+app.MapGet("/api/notifications/preferences", async (ClaimsPrincipal principal) =>
+{
+    var user = CurrentUser(principal);
+    if (user is null) return Results.Unauthorized();
+    await using var conn = await db.OpenAsync();
+    return Results.Ok(await GetOrCreatePreferencesAsync(conn, user.Id));
+}).RequireAuthorization();
+
+app.MapGet("/api/users/credentials", async (ClaimsPrincipal principal) =>
+{
+    var actor = CurrentUser(principal);
+    if (actor is null) return Results.Unauthorized();
+    if (!IsManager(actor)) return Results.Forbid();
+
+    await using var conn = await db.OpenAsync();
+    var credentials = await QueryAsync<UserCredentialDto>(conn,
+        "SELECT id, fullName, email, role, password FROM Users ORDER BY role, fullName");
+    return Results.Ok(credentials);
+}).RequireAuthorization();
+
+app.MapPut("/api/users/{id}/password", async (string id, AdminPasswordUpdateRequest request, ClaimsPrincipal principal) =>
+{
+    var actor = CurrentUser(principal);
+    if (actor is null) return Results.Unauthorized();
+    if (!IsManager(actor)) return Results.Forbid();
+
+    var password = (request.NewPassword ?? "").Trim();
+    if (password.Length < 6) return Results.BadRequest(new { error = "Mật khẩu phải có ít nhất 6 ký tự" });
+
+    await using var conn = await db.OpenAsync();
+    var affected = await ExecuteAsync(conn, "UPDATE Users SET password=@password WHERE id=@id",
+        P("@password", password), P("@id", id));
+    if (affected == 0) return Results.NotFound();
+
+    var updated = await QuerySingleAsync<UserDto>(conn,
+        "SELECT id, fullName, avatarUrl, role, CAST(isOnline AS bit) AS isOnline, email FROM Users WHERE id=@id",
+        P("@id", id));
+    await LogAsync(conn, actor, "user.password.reset", "user", id, null, $"{actor.FullName} đặt lại mật khẩu cho {updated?.FullName ?? id}");
+    return Results.Ok(new { message = "Đã đặt lại mật khẩu", user = updated });
+}).RequireAuthorization();
+
+app.MapPut("/api/notifications/preferences", async (NotificationPreferenceRequest request, ClaimsPrincipal principal) =>
+{
+    var user = CurrentUser(principal);
+    if (user is null) return Results.Unauthorized();
+    await using var conn = await db.OpenAsync();
+    await GetOrCreatePreferencesAsync(conn, user.Id);
+    await ExecuteAsync(conn,
+        """
+        UPDATE NotificationPreferences
+        SET toastEnabled=@toastEnabled, soundEnabled=@soundEnabled, dailyDigestEnabled=@dailyDigestEnabled,
+            taskEventsEnabled=@taskEventsEnabled, projectEventsEnabled=@projectEventsEnabled, commentEventsEnabled=@commentEventsEnabled,
+            updatedAt=@updatedAt
+        WHERE userId=@userId
+        """,
+        P("@userId", user.Id),
+        P("@toastEnabled", request.ToastEnabled),
+        P("@soundEnabled", request.SoundEnabled),
+        P("@dailyDigestEnabled", request.DailyDigestEnabled),
+        P("@taskEventsEnabled", request.TaskEventsEnabled),
+        P("@projectEventsEnabled", request.ProjectEventsEnabled),
+        P("@commentEventsEnabled", request.CommentEventsEnabled),
+        P("@updatedAt", DateTimeOffset.UtcNow.ToString("O")));
+    await LogAsync(conn, user, "notification.preferences.updated", "notification-preference", user.Id, null, $"{user.FullName} updated notification preferences");
+    return Results.Ok(await GetOrCreatePreferencesAsync(conn, user.Id));
+}).RequireAuthorization();
+
+app.MapGet("/api/diagnostics/routes", () => Results.Ok(new[]
+{
+    new RouteInfoDto("Project & Member", "/api/projects", "ProjectService", "project-service:5001", "Nhom 1"),
+    new RouteInfoDto("Task & Kanban", "/api/tasks", "TaskService", "task-service:5002", "Nhom 2"),
+    new RouteInfoDto("Auth/User", "/api/auth, /api/users", "NotifyService", "notify-service:5003", "Nhom 3"),
+    new RouteInfoDto("Comment", "/api/tasks/{taskId}/comments", "NotifyService", "notify-service:5003", "Nhom 3"),
+    new RouteInfoDto("Notification", "/api/notifications", "NotifyService", "notify-service:5003", "Nhom 3"),
+    new RouteInfoDto("Activity Log", "/api/activity-logs", "NotifyService", "notify-service:5003", "Nhom 3")
+})).RequireAuthorization();
+
+app.MapGet("/api/diagnostics/services", async (IHttpClientFactory httpClientFactory) =>
+{
+    var services = await Task.WhenAll(
+        CheckServiceAsync(httpClientFactory, "project", "ProjectService"),
+        CheckServiceAsync(httpClientFactory, "task", "TaskService"),
+        CheckServiceAsync(httpClientFactory, "notify", "NotifyService"));
+    return Results.Ok(new
+    {
+        checkedAt = DateTimeOffset.UtcNow,
+        services
+    });
+}).RequireAuthorization();
 
 app.MapPatch("/api/notifications/mark-all-read", async (ClaimsPrincipal principal) =>
 {
@@ -354,6 +469,15 @@ app.MapGet("/api/activity-logs", async (ClaimsPrincipal principal, string? taskI
 }).RequireAuthorization();
 
 app.Run();
+
+static void ConfigureRuntimePort(WebApplicationBuilder builder)
+{
+    var port = Environment.GetEnvironmentVariable("PORT");
+    if (!string.IsNullOrWhiteSpace(port))
+    {
+        builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
+    }
+}
 
 static TokenValidationParameters TokenValidation(string secret, string issuer, string audience) => new()
 {
@@ -449,25 +573,64 @@ static async Task EnsureSchemaAsync(SqlDb db)
             message NVARCHAR(MAX),
             createdAt NVARCHAR(100)
         );
+        IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='NotificationPreferences' AND xtype='U')
+        CREATE TABLE NotificationPreferences(
+            userId NVARCHAR(50) PRIMARY KEY,
+            toastEnabled BIT DEFAULT 1,
+            soundEnabled BIT DEFAULT 0,
+            dailyDigestEnabled BIT DEFAULT 1,
+            taskEventsEnabled BIT DEFAULT 1,
+            projectEventsEnabled BIT DEFAULT 1,
+            commentEventsEnabled BIT DEFAULT 1,
+            updatedAt NVARCHAR(100)
+        );
         """);
 }
 
 static async Task SeedUsersAsync(SqlDb db)
 {
     await using var conn = await db.OpenAsync();
-    var count = await ExecuteScalarAsync<int>(conn, "SELECT COUNT(1) FROM Users");
-    if (count > 0) return;
+    
+    // Clear out old default seed IDs to avoid duplicates or outdated seed roles
+    var oldIds = new[]
+    {
+        "u0", "u10", "u11", "u12", "u13", "u14", "u_viewer", "u_pm", "u_dev", "u_member",
+        "u_backend_01", "u_backend_02", "u_frontend_01", "u_frontend_02", "u_ba_01", "u_ba_02",
+        "u_qa_01", "u_qa_02", "u_devops_01", "u_uiux_01", "u_uiux_02", "u_member_01", "u_member_02",
+        "u_viewer_01", "u_viewer_02"
+    };
+    foreach (var id in oldIds)
+    {
+        await ExecuteAsync(conn, "DELETE FROM Users WHERE id=@id", P("@id", id));
+    }
 
     var users = new[]
     {
-        new UserSeed("u0", "Quản trị viên", "Admin", "admin@projecthub.com", "admin123", "https://ui-avatars.com/api/?name=Admin&background=4f46e5&color=fff"),
-        new UserSeed("u10", "Nguyễn Văn A", "Backend Dev", "nhanvien1@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Nguyen+Van+A&background=10b981&color=fff"),
-        new UserSeed("u11", "Trần Thị B", "Frontend Lead", "nhanvien2@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Tran+Thi+B&background=6366f1&color=fff"),
-        new UserSeed("u12", "Lê Văn C", "UI/UX Designer", "nhanvien3@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Le+Van+C&background=ec4899&color=fff"),
-        new UserSeed("u13", "Phạm Thị D", "QA Engineer", "nhanvien4@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Pham+Thi+D&background=f59e0b&color=fff"),
-        new UserSeed("u14", "Hoàng Văn E", "Business Analyst", "nhanvien5@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Hoang+Van+E&background=8b5cf6&color=fff"),
-        new UserSeed("u_viewer", "Viewer Demo", "Viewer", "viewer@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Viewer&background=64748b&color=fff")
+        new UserSeed("u0", "Quản trị viên (Admin)", "Admin", "admin@projecthub.com", "admin123", "https://ui-avatars.com/api/?name=Admin&background=4f46e5&color=fff"),
+        new UserSeed("u_pm", "Trưởng dự án (Project Manager)", "Project Manager", "pm@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Project+Manager&background=10b981&color=fff"),
+        new UserSeed("u_dev", "Lập trình viên (Developer)", "Developer", "dev@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Developer&background=6366f1&color=fff"),
+        new UserSeed("u_member", "Thành viên (Member)", "Member", "member@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Member&background=ec4899&color=fff"),
+        new UserSeed("u_viewer", "Người xem (Viewer)", "Viewer", "viewer@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Viewer&background=64748b&color=fff")
     };
+
+    users = users.Concat(new[]
+    {
+        new UserSeed("u_backend_01", "Phạm Đức Anh", "Backend Dev", "backend01@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Pham+Duc+Anh&background=0f766e&color=fff"),
+        new UserSeed("u_backend_02", "Đỗ Quang Huy", "Backend Dev", "backend02@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Do+Quang+Huy&background=0369a1&color=fff"),
+        new UserSeed("u_frontend_01", "Hoàng Thùy Linh", "Frontend Lead", "frontend01@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Hoang+Thuy+Linh&background=7c3aed&color=fff"),
+        new UserSeed("u_frontend_02", "Vũ Hải Đăng", "Frontend Lead", "frontend02@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Vu+Hai+Dang&background=2563eb&color=fff"),
+        new UserSeed("u_ba_01", "Nguyễn Vân Anh", "Business Analyst", "ba01@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Nguyen+Van+Anh&background=f97316&color=fff"),
+        new UserSeed("u_ba_02", "Bùi Khánh Ly", "Business Analyst", "ba02@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Bui+Khanh+Ly&background=ea580c&color=fff"),
+        new UserSeed("u_qa_01", "Lê Quốc Bảo", "QA Engineer", "qa01@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Le+Quoc+Bao&background=e11d48&color=fff"),
+        new UserSeed("u_qa_02", "Đặng Thu Hà", "QA Engineer", "qa02@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Dang+Thu+Ha&background=be123c&color=fff"),
+        new UserSeed("u_devops_01", "Phan Nhật Minh", "DevOps Engineer", "devops01@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Phan+Nhat+Minh&background=334155&color=fff"),
+        new UserSeed("u_uiux_01", "Trịnh Bảo Ngọc", "UI/UX Designer", "uiux01@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Trinh+Bao+Ngoc&background=9333ea&color=fff"),
+        new UserSeed("u_uiux_02", "Đinh Gia Hân", "UI/UX Designer", "uiux02@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Dinh+Gia+Han&background=c026d3&color=fff"),
+        new UserSeed("u_member_01", "Trần Minh Đức", "Member", "member01@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Tran+Minh+Duc&background=0891b2&color=fff"),
+        new UserSeed("u_member_02", "Phạm Thảo Vy", "Member", "member02@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Pham+Thao+Vy&background=14b8a6&color=fff"),
+        new UserSeed("u_viewer_01", "Giảng viên Demo", "Viewer", "viewer01@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Giang+Vien+Demo&background=475569&color=fff"),
+        new UserSeed("u_viewer_02", "Khách mời Demo", "Viewer", "viewer02@projecthub.com", "123456", "https://ui-avatars.com/api/?name=Khach+Moi+Demo&background=64748b&color=fff")
+    }).ToArray();
 
     foreach (var user in users)
     {
@@ -495,9 +658,9 @@ static async Task<NotificationDto> InsertNotificationAsync(SqlConnection conn, s
     return new NotificationDto(id, userId, title, message ?? "", type ?? "manual", taskId, projectId, actor?.Id, actor?.FullName, false, createdAt);
 }
 
-static Task LogAsync(SqlConnection conn, UserDto user, string action, string entityType, string entityId, string? taskId, string message)
+static async Task LogAsync(SqlConnection conn, UserDto user, string action, string entityType, string entityId, string? taskId, string message)
 {
-    return ExecuteAsync(conn,
+    await ExecuteAsync(conn,
         """
         INSERT INTO ActivityLogs(id, userId, userName, action, entityType, entityId, taskId, message, createdAt)
         VALUES(@id,@userId,@userName,@action,@entityType,@entityId,@taskId,@message,@createdAt)
@@ -506,6 +669,52 @@ static Task LogAsync(SqlConnection conn, UserDto user, string action, string ent
         P("@userId", user.Id), P("@userName", user.FullName), P("@action", action),
         P("@entityType", entityType), P("@entityId", entityId), P("@taskId", (object?)taskId ?? DBNull.Value),
         P("@message", message), P("@createdAt", DateTimeOffset.UtcNow.ToString("O")));
+}
+
+static Task LogSystemAsync(SqlConnection conn, UserDto? actor, string action, string entityType, string? entityId, string? taskId, string message)
+{
+    var user = actor ?? new UserDto("system", "System Event", "", "System", true, "system@sprintflow.local");
+    return LogAsync(conn, user, action, entityType, entityId ?? "", taskId, message);
+}
+
+static async Task<NotificationPreferenceDto> GetOrCreatePreferencesAsync(SqlConnection conn, string userId)
+{
+    var existing = await QuerySingleAsync<NotificationPreferenceDto>(conn,
+        """
+        SELECT userId, CAST(toastEnabled AS bit) AS toastEnabled, CAST(soundEnabled AS bit) AS soundEnabled,
+               CAST(dailyDigestEnabled AS bit) AS dailyDigestEnabled,
+               CAST(taskEventsEnabled AS bit) AS taskEventsEnabled,
+               CAST(projectEventsEnabled AS bit) AS projectEventsEnabled,
+               CAST(commentEventsEnabled AS bit) AS commentEventsEnabled,
+               updatedAt
+        FROM NotificationPreferences WHERE userId=@userId
+        """,
+        P("@userId", userId));
+    if (existing is not null) return existing;
+
+    var now = DateTimeOffset.UtcNow.ToString("O");
+    await ExecuteAsync(conn,
+        """
+        INSERT INTO NotificationPreferences(userId, toastEnabled, soundEnabled, dailyDigestEnabled, taskEventsEnabled, projectEventsEnabled, commentEventsEnabled, updatedAt)
+        VALUES(@userId,1,0,1,1,1,1,@updatedAt)
+        """,
+        P("@userId", userId), P("@updatedAt", now));
+    return new NotificationPreferenceDto(userId, true, false, true, true, true, true, now);
+}
+
+static async Task<ServiceHealthDto> CheckServiceAsync(IHttpClientFactory factory, string clientName, string displayName)
+{
+    try
+    {
+        var client = factory.CreateClient(clientName);
+        using var response = await client.GetAsync("/health");
+        return new ServiceHealthDto(displayName, client.BaseAddress?.ToString() ?? "", response.IsSuccessStatusCode ? "ok" : "error", (int)response.StatusCode, response.IsSuccessStatusCode);
+    }
+    catch (Exception ex)
+    {
+        var client = factory.CreateClient(clientName);
+        return new ServiceHealthDto(displayName, client.BaseAddress?.ToString() ?? "", ex.Message, 0, false);
+    }
 }
 
 static async Task<List<T>> QueryAsync<T>(SqlConnection conn, string sql, params SqlParameter[] parameters)
@@ -535,11 +744,11 @@ static async Task<T> ExecuteScalarAsync<T>(SqlConnection conn, string sql, param
     return (T)Convert.ChangeType(value!, typeof(T));
 }
 
-static async Task ExecuteAsync(SqlConnection conn, string sql, params SqlParameter[] parameters)
+static async Task<int> ExecuteAsync(SqlConnection conn, string sql, params SqlParameter[] parameters)
 {
     await using var cmd = new SqlCommand(sql, conn);
     cmd.Parameters.AddRange(parameters);
-    await cmd.ExecuteNonQueryAsync();
+    return await cmd.ExecuteNonQueryAsync();
 }
 
 static SqlParameter P(string name, object? value) => new(name, value ?? DBNull.Value);
@@ -549,9 +758,11 @@ static T Map<T>(IDataRecord row)
     object? Get(string name) => row[name] == DBNull.Value ? null : row[name];
     if (typeof(T) == typeof(string)) return (T)(object)(Get(row.GetName(0))?.ToString() ?? "");
     if (typeof(T) == typeof(UserDto)) return (T)(object)new UserDto(Get("id")!.ToString()!, Get("fullName")!.ToString()!, Get("avatarUrl")?.ToString() ?? "", Get("role")?.ToString() ?? "Member", Convert.ToBoolean(Get("isOnline") ?? false), Get("email")?.ToString() ?? "");
+    if (typeof(T) == typeof(UserCredentialDto)) return (T)(object)new UserCredentialDto(Get("id")!.ToString()!, Get("fullName")!.ToString()!, Get("email")?.ToString() ?? "", Get("role")?.ToString() ?? "Member", Get("password")?.ToString() ?? "");
     if (typeof(T) == typeof(CommentDto)) return (T)(object)new CommentDto(Get("id")!.ToString()!, Get("taskId")!.ToString()!, Get("userId")?.ToString(), Get("userName")?.ToString() ?? "", Get("userAvatar")?.ToString() ?? "", Get("content")?.ToString() ?? "", Get("createdAt")?.ToString() ?? "", Get("updatedAt")?.ToString());
     if (typeof(T) == typeof(NotificationDto)) return (T)(object)new NotificationDto(Get("id")!.ToString()!, Get("userId")!.ToString()!, Get("title")?.ToString() ?? "", Get("message")?.ToString() ?? "", Get("type")?.ToString() ?? "", Get("taskId")?.ToString(), Get("projectId")?.ToString(), Get("actorId")?.ToString(), Get("actorName")?.ToString(), Convert.ToBoolean(Get("isRead") ?? false), Get("createdAt")?.ToString() ?? "");
     if (typeof(T) == typeof(ActivityLogDto)) return (T)(object)new ActivityLogDto(Get("id")!.ToString()!, Get("userId")?.ToString(), Get("userName")?.ToString(), Get("action")?.ToString() ?? "", Get("entityType")?.ToString(), Get("entityId")?.ToString(), Get("taskId")?.ToString(), Get("message")?.ToString(), Get("createdAt")?.ToString() ?? "");
+    if (typeof(T) == typeof(NotificationPreferenceDto)) return (T)(object)new NotificationPreferenceDto(Get("userId")!.ToString()!, Convert.ToBoolean(Get("toastEnabled") ?? true), Convert.ToBoolean(Get("soundEnabled") ?? false), Convert.ToBoolean(Get("dailyDigestEnabled") ?? true), Convert.ToBoolean(Get("taskEventsEnabled") ?? true), Convert.ToBoolean(Get("projectEventsEnabled") ?? true), Convert.ToBoolean(Get("commentEventsEnabled") ?? true), Get("updatedAt")?.ToString() ?? "");
     throw new NotSupportedException(typeof(T).Name);
 }
 
@@ -600,12 +811,19 @@ record LoginRequest(string Email, string Password);
 record RegisterRequest(string FullName, string Email, string Password, string? Role);
 record ProfileUpdateRequest(string? FullName, string? AvatarUrl);
 record PasswordUpdateRequest(string CurrentPassword, string NewPassword);
+record AdminPasswordUpdateRequest(string? NewPassword);
 record RoleUpdateRequest(string? Role);
 record CommentRequest(string? Content);
 record NotificationCreateRequest(string UserId, string Title, string? Message, string? Type, string? TaskId, string? ProjectId);
 record TaskEventRequest(string Type, string Title, string Message, string? TaskId, string? ProjectId, List<string> RecipientUserIds, UserDto? Actor);
+record ProjectEventRequest(string Type, string Title, string Message, string? ProjectId, List<string> RecipientUserIds, UserDto? Actor);
+record NotificationPreferenceRequest(bool ToastEnabled, bool SoundEnabled, bool DailyDigestEnabled, bool TaskEventsEnabled, bool ProjectEventsEnabled, bool CommentEventsEnabled);
 record UserSeed(string Id, string FullName, string Role, string Email, string Password, string AvatarUrl);
 record UserDto(string Id, string FullName, string AvatarUrl, string Role, bool IsOnline, string Email);
+record UserCredentialDto(string Id, string FullName, string Email, string Role, string Password);
 record CommentDto(string Id, string TaskId, string? UserId, string UserName, string UserAvatar, string Content, string CreatedAt, string? UpdatedAt);
 record NotificationDto(string Id, string UserId, string Title, string Message, string Type, string? TaskId, string? ProjectId, string? ActorId, string? ActorName, bool IsRead, string CreatedAt);
 record ActivityLogDto(string Id, string? UserId, string? UserName, string Action, string? EntityType, string? EntityId, string? TaskId, string? Message, string CreatedAt);
+record NotificationPreferenceDto(string UserId, bool ToastEnabled, bool SoundEnabled, bool DailyDigestEnabled, bool TaskEventsEnabled, bool ProjectEventsEnabled, bool CommentEventsEnabled, string UpdatedAt);
+record RouteInfoDto(string Area, string GatewayPath, string TargetService, string InternalTarget, string OwnerGroup);
+record ServiceHealthDto(string Service, string BaseUrl, string Status, int StatusCode, bool Ok);

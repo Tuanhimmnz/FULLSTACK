@@ -1,0 +1,86 @@
+services:
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+    ports:
+      - "127.0.0.1:14333:1433"
+    volumes:
+      - sprintflow-sql-data:/var/opt/mssql
+    restart: unless-stopped
+
+  project-service:
+    build:
+      context: ./Microservices/ProjectService
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      ASPNETCORE_URLS: http://+:5001
+      ConnectionStrings__ProjectDb: "Server=sqlserver,1433;Database=ProjectDB;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;"
+      Jwt__Secret: ${JWT_SECRET}
+      Jwt__Issuer: ${JWT_ISSUER}
+      Jwt__Audience: ${JWT_AUDIENCE}
+      Services__NotifyService: http://notify-service:5003
+    ports:
+      - "127.0.0.1:5001:5001"
+    depends_on:
+      - sqlserver
+    restart: unless-stopped
+
+  task-service:
+    build:
+      context: ./Microservices/TaskService
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      ASPNETCORE_URLS: http://+:5002
+      ConnectionStrings__TaskDb: "Server=sqlserver,1433;Database=TaskDB;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;"
+      Jwt__Secret: ${JWT_SECRET}
+      Jwt__Issuer: ${JWT_ISSUER}
+      Jwt__Audience: ${JWT_AUDIENCE}
+      Services__NotifyService: http://notify-service:5003
+    ports:
+      - "127.0.0.1:5002:5002"
+    depends_on:
+      - sqlserver
+    restart: unless-stopped
+
+  notify-service:
+    build:
+      context: ./Microservices/NotifyService
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      ASPNETCORE_URLS: http://+:5003
+      ConnectionStrings__NotifyDb: "Server=sqlserver,1433;Database=NotifyDB;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;"
+      Jwt__Secret: ${JWT_SECRET}
+      Jwt__Issuer: ${JWT_ISSUER}
+      Jwt__Audience: ${JWT_AUDIENCE}
+      Services__ProjectService: http://project-service:5001
+      Services__TaskService: http://task-service:5002
+      Services__NotifyService: http://notify-service:5003
+    ports:
+      - "127.0.0.1:5003:5003"
+    depends_on:
+      - sqlserver
+    restart: unless-stopped
+
+  api-gateway:
+    build:
+      context: ./Microservices/ApiGateway
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Production}
+      ASPNETCORE_URLS: http://+:7000
+      OcelotConfig: ocelot.docker.json
+      GatewayPublicBaseUrl: ${APP_PUBLIC_URL}
+      Jwt__Secret: ${JWT_SECRET}
+      Jwt__Issuer: ${JWT_ISSUER}
+      Jwt__Audience: ${JWT_AUDIENCE}
+    ports:
+      - "127.0.0.1:7000:7000"
+    depends_on:
+      - project-service
+      - task-service
+      - notify-service
+    restart: unless-stopped
+
+volumes:
+  sprintflow-sql-data:

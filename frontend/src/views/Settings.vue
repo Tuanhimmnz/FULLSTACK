@@ -1,7 +1,7 @@
 <template>
   <div class="min-h-screen bg-[#f7f9fc]">
-    <header class="sticky top-0 z-10 border-b border-slate-200/70 bg-white/90 px-8 py-5 backdrop-blur">
-      <div class="mx-auto flex max-w-7xl items-center justify-between">
+    <header class="sticky top-0 z-10 border-b border-slate-200/70 bg-white/90 px-4 py-5 backdrop-blur lg:px-8">
+      <div class="mx-auto flex max-w-7xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p class="text-[11px] font-black uppercase tracking-[0.22em] text-blue-600">System Console</p>
           <h1 class="mt-1 text-2xl font-black text-slate-950">Cài đặt & kiểm thử dịch vụ</h1>
@@ -19,8 +19,8 @@
       </div>
     </header>
 
-    <main class="mx-auto grid max-w-7xl grid-cols-12 gap-6 px-8 py-7">
-      <section class="col-span-4 space-y-6">
+    <main class="mx-auto grid max-w-7xl gap-6 px-4 py-7 lg:grid-cols-12 lg:px-8">
+      <section class="space-y-6 lg:col-span-4">
         <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <div class="flex items-start justify-between">
             <div>
@@ -80,12 +80,12 @@
         </div>
       </section>
 
-      <section class="col-span-8 space-y-6">
+      <section class="space-y-6 lg:col-span-8">
         <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <div class="flex items-start justify-between gap-4">
             <div>
               <h2 class="text-base font-black text-slate-950">Kiểm thử Notification Service</h2>
-              <p class="mt-1 text-sm text-slate-500">Tạo notification thật vào `NotifyDB.dbo.Notifications` cho chính tài khoản đang đăng nhập.</p>
+              <p class="mt-1 text-sm text-slate-500">Gửi thử một thông báo vào trung tâm thông báo của tài khoản hiện tại.</p>
             </div>
             <button
               type="button"
@@ -96,16 +96,16 @@
             </button>
           </div>
 
-          <form class="mt-5 grid grid-cols-5 gap-3" @submit.prevent="createTestNotification">
+          <form class="mt-5 grid gap-3 md:grid-cols-5" @submit.prevent="createTestNotification">
             <input
               v-model="testNotification.title"
-              class="col-span-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold outline-none focus:border-rose-500 focus:bg-white"
+              class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold outline-none focus:border-rose-500 focus:bg-white md:col-span-2"
               placeholder="Tiêu đề thông báo"
               required
             />
             <input
               v-model="testNotification.message"
-              class="col-span-2 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold outline-none focus:border-rose-500 focus:bg-white"
+              class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold outline-none focus:border-rose-500 focus:bg-white md:col-span-2"
               placeholder="Nội dung thông báo"
               required
             />
@@ -114,7 +114,7 @@
             </button>
           </form>
 
-          <div class="mt-5 grid grid-cols-3 gap-3">
+          <div class="mt-5 grid gap-3 sm:grid-cols-3">
             <div class="rounded-xl bg-slate-50 p-4">
               <p class="text-[10px] font-black uppercase text-slate-400">Tổng thông báo</p>
               <p class="mt-1 text-2xl font-black text-slate-950">{{ taskStore.notifications.length }}</p>

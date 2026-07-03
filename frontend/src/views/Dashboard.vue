@@ -1,404 +1,509 @@
-<template>
-  <div class="flex-1 flex flex-col min-h-screen pb-12">
-    <!-- Top Header Bar -->
-    <header class="bg-white border-b border-slate-100 px-8 py-4 flex items-center justify-between sticky top-0 z-10">
-      <!-- Search -->
-      <div class="relative w-96">
-        <Search class="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
-        <input
-          v-model="searchQuery"
-          type="text"
-          placeholder="Tìm kiếm dự án, công việc..."
-          class="w-full pl-10 pr-4 py-2 bg-slate-50 border border-slate-100 rounded-xl text-xs text-slate-700 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-all duration-200"
-        />
-      </div>
-
-      <!-- User Profile Card -->
-      <div class="flex items-center space-x-4">
-        <router-link to="/notifications" class="relative p-2 hover:bg-slate-50 rounded-xl transition-colors">
-          <Bell class="w-5 h-5 text-slate-500" />
-          <span v-if="taskStore.unreadNotificationCount > 0" class="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-rose-500 ring-2 ring-white"></span>
-        </router-link>
-        
-        <!-- Date -->
-        <span class="text-xs text-slate-400 font-medium">{{ formattedDate }}</span>
-      </div>
-    </header>
-
-    <!-- Main Content Area -->
-    <div class="flex-1 px-8 py-6 max-w-6xl mx-auto w-full space-y-8">
-      <!-- Greeting and CTA Banner -->
-      <div class="flex items-center justify-between">
-        <div class="space-y-1">
-          <h1 class="text-2xl font-bold text-slate-900 tracking-tight flex items-center">
-            Chào buổi sáng, {{ firstName }}!
-            <span class="inline-block animate-wave ml-2 origin-[70%_70%]">👋</span>
-          </h1>
-          <p class="text-sm text-slate-500">
-            Hôm nay bạn có <span class="font-semibold text-indigo-600">{{ taskStore.todayTasks.length }}</span> nhiệm vụ quan trọng cần xử lý trong các dự án tham gia.
-          </p>
-        </div>
-        <button
-          v-if="isManager"
-          @click="isCreateModalOpen = true"
-          class="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2.5 rounded-xl text-sm font-semibold shadow-lg shadow-indigo-100 hover:shadow-indigo-200 transition-all duration-200 hover:-translate-y-0.5 active:translate-y-0"
-        >
-          <Plus class="w-4.5 h-4.5" />
-          <span>Tạo công việc mới</span>
-        </button>
-      </div>
-
-      <!-- Quick stats cards grid (Matches screenshot metrics layout) -->
-      <div class="grid grid-cols-4 gap-6">
-        <!-- Card 1: Total Tasks -->
-        <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
-          <div class="space-y-1">
-            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Tổng công việc</span>
-            <h3 class="text-3xl font-extrabold text-indigo-600 tracking-tight">{{ taskStore.totalTasks }}</h3>
-            <p class="text-[10px] text-slate-400">Nhiệm vụ trong dự án</p>
-          </div>
-          <div class="w-12 h-12 rounded-xl bg-indigo-50 flex items-center justify-center text-indigo-600">
-            <Briefcase class="w-6 h-6" />
-          </div>
-        </div>
-
-        <!-- Card 2: In Progress -->
-        <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
-          <div class="space-y-1">
-            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Đang tiến hành</span>
-            <h3 class="text-3xl font-extrabold text-emerald-500 tracking-tight">{{ taskStore.inProgressTasks }}</h3>
-            <p class="text-[10px] text-emerald-500 font-semibold">↑ 12% so với tuần trước</p>
-          </div>
-          <div class="w-12 h-12 rounded-xl bg-emerald-50 flex items-center justify-center text-emerald-500">
-            <Clock class="w-6 h-6" />
-          </div>
-        </div>
-
-        <!-- Card 3: Overdue -->
-        <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
-          <div class="space-y-1">
-            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Công việc quá hạn</span>
-            <h3 class="text-3xl font-extrabold text-rose-500 tracking-tight">{{ taskStore.overdueTasks }}</h3>
-            <p class="text-[10px] text-rose-500 font-semibold">Cần xử lý ngay hôm nay</p>
-          </div>
-          <div class="w-12 h-12 rounded-xl bg-rose-50 flex items-center justify-center text-rose-500">
-            <AlertTriangle class="w-6 h-6" />
-          </div>
-        </div>
-
-        <!-- Card 4: Active Online Members -->
-        <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex items-center justify-between hover:shadow-md transition-shadow">
-          <div class="space-y-1">
-            <span class="text-xs font-bold text-slate-400 uppercase tracking-wider">Thành viên online</span>
-            <h3 class="text-3xl font-extrabold text-amber-500 tracking-tight">{{ taskStore.onlineMembersCount }}</h3>
-            <p class="text-[10px] text-slate-400">Đang hoạt động trực tiếp</p>
-          </div>
-          <div class="w-12 h-12 rounded-xl bg-amber-50 flex items-center justify-center text-amber-500">
-            <Users class="w-6 h-6" />
-          </div>
-        </div>
-      </div>
-
-      <!-- Main Layout Grid (Projects on Left, Today's Tasks on Right) -->
-      <div class="grid grid-cols-3 gap-8">
-        <!-- Left Side: Projects (2 Columns Wide) -->
-        <div class="col-span-2 space-y-5">
-          <div class="flex items-center justify-between">
-            <h2 class="text-base font-bold text-slate-800 tracking-tight">Dự án tham gia</h2>
-            <router-link to="/kanban" class="text-xs font-semibold text-indigo-600 hover:text-indigo-800 transition-colors flex items-center space-x-1">
-              <span>Xem chi tiết Kanban</span>
-              <ChevronRight class="w-4 h-4" />
-            </router-link>
-          </div>
-
-          <!-- Project Cards Grid -->
-          <div class="grid grid-cols-2 gap-6">
-            <div
-              v-for="project in filteredProjects"
-              :key="project.id"
-              class="bg-white rounded-2xl p-6 border border-slate-100 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 group flex flex-col justify-between h-56"
-            >
-              <!-- Project Header -->
-              <div>
-                <div class="flex items-start justify-between">
-                  <div
-                    class="w-10 h-10 rounded-xl flex items-center justify-center text-white"
-                    :class="[
-                      project.color === 'indigo' ? 'bg-indigo-500' :
-                      project.color === 'amber' ? 'bg-amber-500' :
-                      project.color === 'emerald' ? 'bg-emerald-500' : 'bg-slate-500'
-                    ]"
-                  >
-                    <!-- Project Custom Icon Shape -->
-                    <svg v-if="project.color === 'indigo'" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5.5 h-5.5">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 0 0 6 3.75v16.5a2.25 2.25 0 0 0 2.25 2.25h7.5A2.25 2.25 0 0 0 18 20.25V3.75a2.25 2.25 0 0 0-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3" />
-                    </svg>
-                    <svg v-else-if="project.color === 'amber'" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5.5 h-5.5">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M7.217 10.907a2.25 2.25 0 1 0 0 2.186m0-2.186c.18.324.283.696.283 1.093s-.103.77-.283 1.093m0-2.186 9.566-5.314m-9.566 7.5 9.566 5.314m0 0a2.25 2.25 0 1 0 3.935 2.186 2.25 2.25 0 0 0-3.935-2.186Zm0-12.814a2.25 2.25 0 1 0 3.933-2.185 2.25 2.25 0 0 0-3.933 2.185Z" />
-                    </svg>
-                    <svg v-else xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5.5 h-5.5">
-                      <path stroke-linecap="round" stroke-linejoin="round" d="M15 19.128a9.38 9.38 0 0 0 2.625.372 9.337 9.337 0 0 0 4.121-.952 4.125 4.125 0 0 0-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.109A9.342 9.342 0 0 0 12 21a9.34 9.34 0 0 0-3-1.763V19.13c0-1.113.285-2.16.786-3.07M12 18.046a9.33 9.33 0 0 0 3-.54M12 18.046a9.33 9.33 0 0 1-3-.54M9.786 16.06L9.785 16.06a9.37 9.37 0 0 0-2.625.372 4.125 4.125 0 0 0 7.533 2.493M7.215 14.884a8.989 8.989 0 0 0-2.215.372c-1.896.539-3 2.285-3 4.116v.109A9.342 9.342 0 0 0 5 21a9.34 9.34 0 0 0 3-1.763V19.13c0-1.113.285-2.16.786-3.07M5 12.046a9.33 9.33 0 0 0 3-.54M5 12.046a9.33 9.33 0 0 1-3-.54M2.786 10.06A9.34 9.34 0 0 0 5 12.046M12 10.5a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm6 3a3 3 0 1 1-6 0 3 3 0 0 1 6 0Zm3-9a3 3 0 1 1-6 0 3 3 0 0 1 6 0Z" />
-                    </svg>
-                  </div>
-                  <span
-                    class="px-2.5 py-0.5 rounded-full text-[10px] font-bold"
-                    :class="[
-                      project.color === 'indigo' ? 'bg-indigo-50 text-indigo-600' :
-                      project.color === 'amber' ? 'bg-amber-50 text-amber-600' :
-                      'bg-emerald-50 text-emerald-600'
-                    ]"
-                  >
-                    {{ project.statusText }}
-                  </span>
-                </div>
-                
-                <h3 class="text-sm font-bold text-slate-800 mt-4 group-hover:text-indigo-600 transition-colors">
-                  {{ project.name }}
-                </h3>
-                <p class="text-[11px] text-slate-400 mt-1 line-clamp-2 leading-relaxed">
-                  {{ project.description }}
-                </p>
-              </div>
-
-              <!-- Project Footer Area -->
-              <div class="mt-4 pt-4 border-t border-slate-50 space-y-3">
-                <!-- Members stacked list -->
-                <div class="flex items-center justify-between">
-                  <div class="flex -space-x-1.5 overflow-hidden">
-                    <img
-                      v-for="member in project.members"
-                      :key="member.id"
-                      :src="member.avatarUrl"
-                      :alt="member.fullName"
-                      :title="member.fullName"
-                      class="inline-block h-6.5 w-6.5 rounded-full ring-2 ring-white"
-                    />
-                  </div>
-                  <span class="text-[10px] text-slate-400 font-medium">Cập nhật hôm qua</span>
-                </div>
-
-                <!-- Progress Bar -->
-                <div class="space-y-1">
-                  <div class="flex items-center justify-between text-[10px] font-semibold">
-                    <span class="text-slate-400">Tiến độ dự án</span>
-                    <span :class="[
-                      project.color === 'indigo' ? 'text-indigo-600' :
-                      project.color === 'amber' ? 'text-amber-600' :
-                      'text-emerald-600'
-                    ]">{{ taskStore.getProjectProgress(project.id) }}%</span>
-                  </div>
-                  <div class="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                    <div
-                      class="h-full rounded-full transition-all duration-500"
-                      :class="[
-                        project.color === 'indigo' ? 'bg-indigo-600' :
-                        project.color === 'amber' ? 'bg-amber-500' :
-                        'bg-emerald-500'
-                      ]"
-                      :style="{ width: taskStore.getProjectProgress(project.id) + '%' }"
-                    ></div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Right Side: Today's Tasks Checklist (1 Column Wide) -->
-        <div class="space-y-5">
-          <div class="flex items-center justify-between">
-            <h2 class="text-base font-bold text-slate-800 tracking-tight flex items-center space-x-1.5">
-              <span>Công việc hôm nay</span>
-              <span class="bg-indigo-50 text-indigo-600 text-[10px] font-bold px-2 py-0.5 rounded-full">
-                {{ taskStore.todayTasks.length }} việc
-              </span>
-            </h2>
-          </div>
-
-          <!-- Checklist panel -->
-          <div class="bg-white rounded-2xl p-5 border border-slate-100 shadow-sm flex flex-col min-h-[400px]">
-            <div v-if="taskStore.todayTasks.length > 0" class="space-y-3 flex-1">
-              <div
-                v-for="task in taskStore.todayTasks"
-                :key="task.id"
-                class="flex items-start space-x-3.5 p-3 rounded-xl border border-slate-50 hover:bg-slate-50 transition-colors group cursor-pointer"
-                @click.self="openTaskDetails(task.id)"
-              >
-                <!-- Custom Checkbox -->
-                <div class="mt-0.5 flex items-center" @click.stop="!isViewer && toggleTaskCompleted(task)">
-                  <div
-                    class="w-5 h-5 rounded-md border flex items-center justify-center transition-all"
-                    :class="[
-                      task.status === 'Done'
-                        ? 'bg-indigo-600 border-indigo-600 text-white'
-                        : 'border-slate-300 bg-white group-hover:border-indigo-500',
-                      isViewer ? 'cursor-default' : 'cursor-pointer'
-                    ]"
-                  >
-                    <Check v-if="task.status === 'Done'" class="w-3.5 h-3.5 stroke-[3]" />
-                  </div>
-                </div>
-
-                <!-- Text & Metadata -->
-                <div class="flex-1 space-y-1" @click="openTaskDetails(task.id)">
-                  <h4
-                    class="text-xs font-bold text-slate-700 leading-snug group-hover:text-indigo-600 transition-colors"
-                    :class="{ 'line-through text-slate-400': task.status === 'Done' }"
-                  >
-                    {{ task.title }}
-                  </h4>
-                  <div class="flex items-center space-x-2 text-[10px] font-medium text-slate-400">
-                    <span class="flex items-center">
-                      <Clock class="w-3 h-3 mr-0.5" />
-                      {{ task.dueDate === todayStr ? 'Hôm nay' : task.dueDate }}
-                    </span>
-                    <span>•</span>
-                    <span
-                      class="px-1.5 py-0.5 rounded-full text-[9px] font-bold"
-                      :class="[
-                        task.priority === 'High' ? 'bg-rose-50 text-rose-500' :
-                        task.priority === 'Medium' ? 'bg-amber-50 text-amber-500' :
-                        'bg-emerald-50 text-emerald-500'
-                      ]"
-                    >
-                      {{ task.priority === 'High' ? 'Cao' : task.priority === 'Medium' ? 'Trung bình' : 'Thấp' }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Empty view -->
-            <div v-else class="flex-1 flex flex-col items-center justify-center text-center p-6 space-y-3">
-              <div class="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center text-slate-400">
-                <CheckCircle class="w-6 h-6 text-emerald-500" />
-              </div>
-              <div class="space-y-1">
-                <h4 class="text-xs font-bold text-slate-700">Tất cả đã hoàn thành!</h4>
-                <p class="text-[10px] text-slate-400 max-w-[180px]">Hôm nay bạn không còn nhiệm vụ nào quá hạn hoặc cần làm.</p>
-              </div>
-            </div>
-
-            <!-- Add quick task button -->
-            <button
-              v-if="isManager"
-              @click="isCreateModalOpen = true"
-              class="w-full mt-4 py-2.5 border border-dashed border-slate-200 hover:border-indigo-400 text-slate-400 hover:text-indigo-600 rounded-xl text-xs font-semibold flex items-center justify-center space-x-1.5 transition-all bg-slate-50/50 hover:bg-indigo-50/30"
-            >
-              <Plus class="w-4 h-4" />
-              <span>Thêm nhiệm vụ</span>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modals -->
-    <QuickTaskModal :isOpen="isCreateModalOpen" @close="isCreateModalOpen = false" />
-    <TaskDetailModal :isOpen="isDetailModalOpen" :taskId="activeTaskId" @close="isDetailModalOpen = false" />
-
-    <!-- Footer -->
-    <footer class="mt-auto pt-8 border-t border-slate-100 text-center text-[10px] text-slate-400 px-8 flex justify-between items-center max-w-6xl mx-auto w-full">
-      <span>© 2026 SprintFlow - Hệ thống quản lý dự án & phân công công việc</span>
-      <div class="space-x-4">
-        <a href="#" class="hover:text-slate-600">Trang chủ</a>
-        <a href="#" class="hover:text-slate-600">Điều khoản</a>
-        <a href="#" class="hover:text-slate-600">Liên hệ</a>
-      </div>
-    </footer>
-  </div>
-</template>
-
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { computed, ref } from 'vue';
 import {
-  Search,
-  Bell,
-  Plus,
-  Briefcase,
-  Clock,
   AlertTriangle,
-  Users,
+  Bell,
+  Briefcase,
+  CalendarClock,
+  CheckCircle2,
   ChevronRight,
-  Check,
-  CheckCircle
+  Clock3,
+  Plus,
+  Search,
+  Users
 } from '@lucide/vue';
 import { useTaskStore } from '../stores/taskStore';
 import type { Task } from '../services/mockData';
 import QuickTaskModal from '../components/QuickTaskModal.vue';
 import TaskDetailModal from '../components/TaskDetailModal.vue';
-
+import { avatarFor, onAvatarError } from '../utils/avatar';
 
 const taskStore = useTaskStore();
 
-const isManager = computed(() => {
-  const role = taskStore.currentUser.role;
-  return role === 'Project Manager' || role === 'Admin';
-});
-
-const isViewer = computed(() => {
-  return taskStore.currentUser.role === 'Viewer';
-});
-
-// Modals State
+const searchQuery = ref('');
 const isCreateModalOpen = ref(false);
 const isDetailModalOpen = ref(false);
 const activeTaskId = ref<string | undefined>(undefined);
 
-// Search Query
-const searchQuery = ref('');
-
-// Computed Dates
-const todayStr = computed(() => new Date().toISOString().split('T')[0]);
-const formattedDate = computed(() => {
-  const options: Intl.DateTimeFormatOptions = { weekday: 'long', day: 'numeric', month: 'numeric', year: 'numeric' };
-  const str = new Date().toLocaleDateString('vi-VN', options);
-  // Capitalize first letter (e.g. "Thứ hai...")
-  return str.charAt(0).toUpperCase() + str.slice(1);
-});
-
-// Greeting computations
+const isManager = computed(() => ['Project Manager', 'Admin'].includes(taskStore.currentUser?.role));
 const firstName = computed(() => {
-  const fullName = taskStore.currentUser.fullName || 'Việt';
-  return fullName.split(' ').pop(); // Get last word ("Việt")
+  const name = taskStore.currentUser?.fullName || 'bạn';
+  return name.split(' ').filter(Boolean).pop() || name;
 });
 
-// Filtering projects based on search query
+const today = computed(() => new Date().toISOString().split('T')[0]);
+const formattedDate = computed(() => {
+  const value = new Date().toLocaleDateString('vi-VN', {
+    weekday: 'long',
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  });
+  return value.charAt(0).toUpperCase() + value.slice(1);
+});
+
 const filteredProjects = computed(() => {
-  if (!searchQuery.value.trim()) return taskStore.projects;
-  const query = searchQuery.value.toLowerCase();
-  return taskStore.projects.filter(p =>
-    p.name.toLowerCase().includes(query) ||
-    p.description.toLowerCase().includes(query)
-  );
+  const query = searchQuery.value.trim().toLowerCase();
+  if (!query) return taskStore.projects.slice(0, 4);
+  return taskStore.projects
+    .filter(project =>
+      project.name.toLowerCase().includes(query) ||
+      project.description.toLowerCase().includes(query)
+    )
+    .slice(0, 4);
 });
 
-// Toggle Task Completed
-function toggleTaskCompleted(task: Task) {
-  const newStatus = task.status === 'Done' ? 'ToDo' : 'Done';
-  taskStore.updateTaskStatus(task.id, newStatus);
+const searchTasks = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase();
+  if (!query) return [];
+  return taskStore.tasks
+    .filter(task => {
+      const project = taskStore.projects.find(item => item.id === task.projectId);
+      const assignees = (task.assigneeId || '')
+        .split(',')
+        .map(id => taskStore.users.find(user => user.id === id.trim())?.fullName || '')
+        .join(' ');
+
+      return [
+        task.title,
+        task.description,
+        task.status,
+        task.priority,
+        project?.name || '',
+        assignees,
+        ...(task.labels || [])
+      ].join(' ').toLowerCase().includes(query);
+    })
+    .slice(0, 6);
+});
+
+const burndownPoints = computed(() => {
+  const total = Math.max(taskStore.tasks.length, 1);
+  const remaining = taskStore.tasks.filter(task => task.status !== 'Done').length;
+  const days = Array.from({ length: 7 }, (_, index) => index);
+
+  return days.map(day => {
+    const ideal = Math.max(total - Math.round((total / 6) * day), 0);
+    const actual = Math.max(remaining + Math.round((remaining / 10) * (6 - day)) - (6 - day), 0);
+    return {
+      day,
+      label: new Date(Date.now() - (6 - day) * 86400000).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' }),
+      ideal: Math.min(100, Math.round((ideal / total) * 100)),
+      actual: Math.min(100, Math.round((actual / total) * 100))
+    };
+  });
+});
+
+const burndownPath = computed(() =>
+  burndownPoints.value.map((point, index) => `${index === 0 ? 'M' : 'L'} ${index * 16.67} ${100 - point.actual}`).join(' ')
+);
+
+const burndownIdealPath = computed(() =>
+  burndownPoints.value.map((point, index) => `${index === 0 ? 'M' : 'L'} ${index * 16.67} ${100 - point.ideal}`).join(' ')
+);
+
+function projectName(projectId: string) {
+  return taskStore.projects.find(project => project.id === projectId)?.name || 'Dự án khác';
 }
 
-// Open Task Details Modal
+const boardStats = computed(() => [
+  {
+    label: 'Tổng task',
+    value: taskStore.totalTasks,
+    helper: 'Đang quản lý qua Task Service',
+    icon: Briefcase,
+    className: 'bg-blue-50 text-blue-700 border-blue-100'
+  },
+  {
+    label: 'Đang làm',
+    value: taskStore.inProgressTasks,
+    helper: 'Task ở cột In Progress',
+    icon: Clock3,
+    className: 'bg-emerald-50 text-emerald-700 border-emerald-100'
+  },
+  {
+    label: 'Quá hạn',
+    value: taskStore.overdueTasks,
+    helper: 'Cần xử lý trước buổi báo cáo',
+    icon: AlertTriangle,
+    className: 'bg-rose-50 text-rose-700 border-rose-100'
+  },
+  {
+    label: 'Thành viên online',
+    value: taskStore.onlineMembersCount,
+    helper: 'Tài khoản đang hoạt động',
+    icon: Users,
+    className: 'bg-orange-50 text-orange-700 border-orange-100'
+  }
+]);
+
+const serviceRows = computed(() => [
+  { label: 'Nhóm 1', name: 'Project Service', ok: taskStore.projectServiceOnline, path: '/api/projects' },
+  { label: 'Nhóm 2', name: 'Task Service', ok: taskStore.taskServiceOnline, path: '/api/tasks' },
+  { label: 'Nhóm 3', name: 'Notify Service', ok: taskStore.notifyServiceOnline, path: '/api/notifications' }
+]);
+
+const todayTasks = computed(() => taskStore.todayTasks.slice(0, 6));
+const recentNotifications = computed(() => taskStore.notifications.slice(0, 5));
+const donePercent = computed(() => {
+  if (taskStore.totalTasks === 0) return 0;
+  const done = taskStore.tasks.filter(task => task.status === 'Done').length;
+  return Math.round((done / taskStore.totalTasks) * 100);
+});
+
+function priorityLabel(task: Task) {
+  if (task.priority === 'High') return 'Cao';
+  if (task.priority === 'Medium') return 'Trung bình';
+  return 'Thấp';
+}
+
+function priorityClass(task: Task) {
+  if (task.priority === 'High') return 'bg-rose-50 text-rose-700';
+  if (task.priority === 'Medium') return 'bg-amber-50 text-amber-700';
+  return 'bg-emerald-50 text-emerald-700';
+}
+
 function openTaskDetails(taskId: string) {
   activeTaskId.value = taskId;
   isDetailModalOpen.value = true;
 }
 </script>
 
-<style>
-@keyframes wave {
-  0% { transform: rotate( 0.0deg) }
-  10% { transform: rotate(14.0deg) }
-  20% { transform: rotate(-8.0deg) }
-  30% { transform: rotate(14.0deg) }
-  40% { transform: rotate(-4.0deg) }
-  50% { transform: rotate(10.0deg) }
-  60% { transform: rotate( 0.0deg) }
-  100% { transform: rotate( 0.0deg) }
-}
+<template>
+  <div class="min-h-screen bg-[#f5f7fb] pb-10">
+    <header class="sticky top-0 z-20 border-b border-slate-200/80 bg-white/90 px-4 py-4 backdrop-blur-xl lg:px-8">
+      <div class="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div>
+          <p class="text-xs font-black text-blue-600">SprintFlow Workspace</p>
+          <h1 class="mt-1 text-2xl font-black text-slate-950">Tổng quan vận hành</h1>
+          <p class="mt-1 text-sm font-semibold text-slate-500">
+            {{ formattedDate }} · Xin chào {{ firstName }}, hôm nay có {{ taskStore.todayTasks.length }} việc cần theo dõi.
+          </p>
+        </div>
 
-.animate-wave {
-  animation: wave 2.5s infinite;
-}
-</style>
+        <div class="flex flex-col gap-3 md:flex-row md:items-center">
+          <div class="relative md:w-80">
+            <Search class="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+            <input
+              v-model="searchQuery"
+              type="text"
+              placeholder="Tìm dự án hoặc công việc..."
+              class="w-full rounded-2xl border border-slate-200 bg-slate-50 py-3 pl-10 pr-4 text-sm font-bold text-slate-700 outline-none transition focus:border-blue-400 focus:bg-white"
+            />
+          </div>
+
+          <router-link
+            to="/notifications"
+            class="relative flex size-12 items-center justify-center rounded-2xl border border-slate-200 bg-white text-slate-600 transition hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700"
+            title="Thông báo"
+          >
+            <Bell class="size-5" />
+            <span v-if="taskStore.unreadNotificationCount > 0" class="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-rose-500 px-1 text-[10px] font-black text-white">
+              {{ taskStore.unreadNotificationCount > 99 ? '99+' : taskStore.unreadNotificationCount }}
+            </span>
+          </router-link>
+
+          <button
+            v-if="isManager"
+            type="button"
+            class="inline-flex items-center justify-center gap-2 rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white shadow-xl shadow-slate-200 transition hover:-translate-y-0.5 hover:bg-slate-800"
+            @click="isCreateModalOpen = true"
+          >
+            <Plus class="size-5" />
+            Tạo công việc
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="mx-auto max-w-[1500px] space-y-6 px-4 py-6 lg:px-8">
+      <section class="grid gap-4 xl:grid-cols-[minmax(0,1fr)_24rem]">
+        <div class="overflow-hidden rounded-[1.6rem] border border-slate-200 bg-white p-6 shadow-xl shadow-slate-200/50">
+          <div class="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+            <div>
+              <p class="text-xs font-black text-cyan-600">SprintFlow Workspace</p>
+              <h2 class="mt-2 max-w-3xl text-3xl font-black leading-tight text-slate-950">
+                Theo dõi tiến độ dự án, deadline và việc cần xử lý trong ngày.
+              </h2>
+              <p class="mt-3 max-w-2xl text-sm font-semibold leading-6 text-slate-500">
+                Tập trung project đang chạy, task sắp hạn, bình luận mới và thông báo realtime để đội làm việc đúng kế hoạch.
+              </p>
+              <div class="mt-5 flex flex-wrap gap-3">
+                <router-link to="/kanban" class="inline-flex items-center gap-2 rounded-2xl bg-blue-600 px-5 py-3 text-sm font-black text-white transition hover:bg-blue-700">
+                  Mở Kanban
+                  <ChevronRight class="size-4" />
+                </router-link>
+                <router-link to="/settings" class="inline-flex items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 px-5 py-3 text-sm font-black text-slate-700 transition hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700">
+                  Kiểm tra Diagnostics
+                </router-link>
+              </div>
+            </div>
+
+            <div class="rounded-[1.4rem] bg-slate-950 p-5 text-white">
+              <p class="text-sm font-black text-cyan-300">Tiến độ tổng</p>
+              <div class="mt-5 flex items-end justify-between">
+                <span class="text-5xl font-black">{{ donePercent }}%</span>
+                <CheckCircle2 class="size-10 text-emerald-300" />
+              </div>
+              <div class="mt-5 h-2 overflow-hidden rounded-full bg-white/15">
+                <div class="h-full rounded-full bg-emerald-300 transition-all duration-500" :style="{ width: `${donePercent}%` }"></div>
+              </div>
+              <p class="mt-4 text-sm font-semibold leading-6 text-slate-300">
+                {{ taskStore.tasks.filter(task => task.status === 'Done').length }} / {{ taskStore.totalTasks }} task đã hoàn thành.
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div class="rounded-[1.6rem] border border-slate-200 bg-white p-5 shadow-xl shadow-slate-200/50">
+          <div class="flex items-center justify-between">
+            <h2 class="text-base font-black text-slate-950">Service Health</h2>
+            <span class="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">Live</span>
+          </div>
+          <div class="mt-4 space-y-3">
+            <div
+              v-for="service in serviceRows"
+              :key="service.name"
+              class="flex items-center justify-between rounded-2xl border p-4"
+              :class="service.ok ? 'border-emerald-100 bg-emerald-50/70' : 'border-rose-100 bg-rose-50/70'"
+            >
+              <div>
+                <p class="text-xs font-black" :class="service.ok ? 'text-emerald-700' : 'text-rose-700'">{{ service.label }}</p>
+                <p class="text-sm font-black text-slate-900">{{ service.name }}</p>
+                <p class="text-xs font-semibold text-slate-500">{{ service.path }}</p>
+              </div>
+              <span class="size-3 rounded-full" :class="service.ok ? 'bg-emerald-500' : 'bg-rose-500'"></span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <article
+          v-for="stat in boardStats"
+          :key="stat.label"
+          class="rounded-[1.4rem] border bg-white p-5 shadow-sm transition hover:-translate-y-1 hover:shadow-xl hover:shadow-slate-200/70"
+          :class="stat.className"
+        >
+          <div class="flex items-start justify-between">
+            <div>
+              <p class="text-xs font-black opacity-80">{{ stat.label }}</p>
+              <p class="mt-2 text-4xl font-black">{{ stat.value }}</p>
+            </div>
+            <span class="flex size-12 items-center justify-center rounded-2xl bg-white/80">
+              <component :is="stat.icon" class="size-6" />
+            </span>
+          </div>
+          <p class="mt-4 text-xs font-bold opacity-80">{{ stat.helper }}</p>
+        </article>
+      </section>
+
+      <section v-if="searchQuery.trim()" class="rounded-[1.6rem] border border-slate-200 bg-white p-5 shadow-sm">
+        <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h2 class="text-lg font-black text-slate-950">Kết quả tìm kiếm</h2>
+            <p class="text-sm font-semibold text-slate-500">Tìm trong tên dự án, task, người phụ trách, nhãn và trạng thái.</p>
+          </div>
+          <span class="rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-700">
+            {{ filteredProjects.length + searchTasks.length }} kết quả
+          </span>
+        </div>
+
+        <div class="mt-4 grid gap-3 lg:grid-cols-2">
+          <button
+            v-for="task in searchTasks"
+            :key="task.id"
+            type="button"
+            class="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:-translate-y-0.5 hover:border-blue-200 hover:bg-white hover:shadow-lg hover:shadow-slate-200/70"
+            @click="openTaskDetails(task.id)"
+          >
+            <div class="flex items-start justify-between gap-3">
+              <div class="min-w-0">
+                <p class="truncate text-sm font-black text-slate-950">{{ task.title }}</p>
+                <p class="mt-1 text-xs font-bold text-slate-500">{{ projectName(task.projectId) }}</p>
+              </div>
+              <span class="shrink-0 rounded-full px-2 py-1 text-[11px] font-black" :class="priorityClass(task)">
+                {{ priorityLabel(task) }}
+              </span>
+            </div>
+            <p class="mt-3 line-clamp-2 text-xs font-semibold leading-5 text-slate-500">{{ task.description || 'Chưa có mô tả chi tiết.' }}</p>
+          </button>
+        </div>
+      </section>
+
+      <section class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
+        <div class="rounded-[1.6rem] border border-slate-200 bg-white p-5 shadow-sm">
+          <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h2 class="text-lg font-black text-slate-950">Tiến độ Sprint</h2>
+              <p class="mt-1 text-sm font-semibold text-slate-500">Khối lượng công việc còn lại trong 7 ngày gần nhất.</p>
+            </div>
+            <div class="flex gap-3 text-xs font-black">
+              <span class="inline-flex items-center gap-1.5 text-slate-500"><span class="size-2 rounded-full bg-slate-300"></span>Kế hoạch</span>
+              <span class="inline-flex items-center gap-1.5 text-indigo-700"><span class="size-2 rounded-full bg-indigo-600"></span>Thực tế</span>
+            </div>
+          </div>
+
+          <div class="mt-5 h-72 rounded-2xl border border-slate-100 bg-slate-50 p-4">
+            <svg viewBox="0 0 100 100" preserveAspectRatio="none" class="h-full w-full overflow-visible">
+              <defs>
+                <linearGradient id="burndownFill" x1="0" x2="0" y1="0" y2="1">
+                  <stop offset="0%" stop-color="#6366f1" stop-opacity="0.24" />
+                  <stop offset="100%" stop-color="#6366f1" stop-opacity="0.02" />
+                </linearGradient>
+              </defs>
+              <path d="M 0 100 L 0 0 L 100 100 Z" fill="#e2e8f0" opacity="0.25" />
+              <path :d="burndownIdealPath" fill="none" stroke="#94a3b8" stroke-width="1.2" stroke-dasharray="3 3" vector-effect="non-scaling-stroke" />
+              <path :d="`${burndownPath} L 100 100 L 0 100 Z`" fill="url(#burndownFill)" />
+              <path :d="burndownPath" fill="none" stroke="#4f46e5" stroke-width="1.8" vector-effect="non-scaling-stroke" />
+              <circle
+                v-for="(point, index) in burndownPoints"
+                :key="point.label"
+                :cx="index * 16.67"
+                :cy="100 - point.actual"
+                r="1.2"
+                fill="#4f46e5"
+                vector-effect="non-scaling-stroke"
+              />
+            </svg>
+          </div>
+          <div class="mt-3 grid grid-cols-7 gap-1 text-center text-[11px] font-black text-slate-400">
+            <span v-for="point in burndownPoints" :key="point.label">{{ point.label }}</span>
+          </div>
+        </div>
+
+        <div class="rounded-[1.6rem] border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 class="text-lg font-black text-slate-950">Tài khoản demo</h2>
+          <div class="mt-4 space-y-3 text-sm">
+            <div class="rounded-2xl bg-slate-50 p-4">
+              <p class="font-black text-slate-900">Admin</p>
+              <p class="mt-1 font-mono text-xs font-bold text-slate-500">admin@projecthub.com / admin123</p>
+            </div>
+            <div class="rounded-2xl bg-slate-50 p-4">
+              <p class="font-black text-slate-900">Project Manager</p>
+              <p class="mt-1 font-mono text-xs font-bold text-slate-500">pm@projecthub.com / 123456</p>
+            </div>
+            <div class="rounded-2xl bg-slate-50 p-4">
+              <p class="font-black text-slate-900">Developer, Member, Viewer</p>
+              <p class="mt-1 font-mono text-xs font-bold text-slate-500">dev@projecthub.com / member@projecthub.com / viewer@projecthub.com</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
+        <div class="rounded-[1.6rem] border border-slate-200 bg-white p-5 shadow-sm">
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <h2 class="text-lg font-black text-slate-950">Dự án đang tham gia</h2>
+              <p class="mt-1 text-sm font-semibold text-slate-500">Theo dõi tiến độ từng project từ Project Service.</p>
+            </div>
+            <router-link to="/projects" class="hidden items-center gap-1 text-sm font-black text-blue-700 hover:text-blue-900 md:flex">
+              Xem tất cả
+              <ChevronRight class="size-4" />
+            </router-link>
+          </div>
+
+          <div class="mt-5 grid gap-4 lg:grid-cols-2">
+            <article
+              v-for="project in filteredProjects"
+              :key="project.id"
+              class="rounded-[1.3rem] border border-slate-200 bg-slate-50/70 p-5 transition hover:-translate-y-1 hover:bg-white hover:shadow-xl hover:shadow-slate-200/70"
+            >
+              <div class="flex items-start justify-between gap-4">
+                <div>
+                  <span class="rounded-full bg-white px-3 py-1 text-[11px] font-black text-slate-500">{{ project.statusText }}</span>
+                  <h3 class="mt-3 text-lg font-black text-slate-950">{{ project.name }}</h3>
+                  <p class="mt-2 line-clamp-2 text-sm font-semibold leading-6 text-slate-500">{{ project.description }}</p>
+                </div>
+                <div class="flex -space-x-2">
+                  <img
+                    v-for="member in project.members.slice(0, 3)"
+                    :key="member.id"
+                    :src="avatarFor(member.fullName, member.avatarUrl, '2563eb')"
+                    @error="onAvatarError($event, member.fullName, '2563eb')"
+                    :alt="member.fullName"
+                    :title="member.fullName"
+                    class="size-9 rounded-full border-2 border-white object-cover"
+                  />
+                </div>
+              </div>
+
+              <div class="mt-5">
+                <div class="flex items-center justify-between text-xs font-black text-slate-500">
+                  <span>Tiến độ</span>
+                  <span>{{ taskStore.getProjectProgress(project.id) }}%</span>
+                </div>
+                <div class="mt-2 h-2 overflow-hidden rounded-full bg-white">
+                  <div class="h-full rounded-full bg-blue-600 transition-all duration-500" :style="{ width: `${taskStore.getProjectProgress(project.id)}%` }"></div>
+                </div>
+              </div>
+            </article>
+
+            <div v-if="filteredProjects.length === 0" class="rounded-2xl border border-dashed border-slate-200 p-10 text-center">
+              <p class="text-sm font-black text-slate-600">Không tìm thấy dự án phù hợp.</p>
+            </div>
+          </div>
+        </div>
+
+        <aside class="space-y-5">
+          <div class="rounded-[1.6rem] border border-slate-200 bg-white p-5 shadow-sm">
+            <div class="flex items-center justify-between">
+              <h2 class="text-lg font-black text-slate-950">Việc hôm nay</h2>
+              <span class="rounded-full bg-blue-50 px-3 py-1 text-xs font-black text-blue-700">{{ todayTasks.length }} việc</span>
+            </div>
+
+            <div class="mt-4 space-y-3">
+              <button
+                v-for="task in todayTasks"
+                :key="task.id"
+                type="button"
+                class="w-full rounded-2xl border border-slate-200 bg-slate-50 p-4 text-left transition hover:border-blue-200 hover:bg-blue-50"
+                @click="openTaskDetails(task.id)"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <p class="line-clamp-2 text-sm font-black leading-6 text-slate-900">{{ task.title }}</p>
+                  <span class="shrink-0 rounded-full px-2 py-1 text-[11px] font-black" :class="priorityClass(task)">
+                    {{ priorityLabel(task) }}
+                  </span>
+                </div>
+                <p class="mt-2 flex items-center gap-1.5 text-xs font-bold text-slate-500">
+                  <CalendarClock class="size-4" />
+                  {{ task.dueDate === today ? 'Hôm nay' : task.dueDate }}
+                </p>
+              </button>
+
+              <div v-if="todayTasks.length === 0" class="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+                <CheckCircle2 class="mx-auto size-9 text-emerald-500" />
+                <p class="mt-3 text-sm font-black text-slate-700">Không có task cần xử lý ngay.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-[1.6rem] border border-slate-200 bg-white p-5 shadow-sm">
+            <div class="flex items-center justify-between">
+              <h2 class="text-lg font-black text-slate-950">Thông báo mới</h2>
+              <router-link to="/notifications" class="text-xs font-black text-rose-700">Mở</router-link>
+            </div>
+            <div class="mt-4 space-y-3">
+              <article
+                v-for="notification in recentNotifications"
+                :key="notification.id"
+                class="rounded-2xl border border-slate-200 bg-slate-50 p-4"
+              >
+                <p class="text-sm font-black text-slate-900">{{ notification.title }}</p>
+                <p class="mt-1 line-clamp-2 text-xs font-semibold leading-5 text-slate-500">{{ notification.message }}</p>
+              </article>
+              <div v-if="recentNotifications.length === 0" class="rounded-2xl border border-dashed border-slate-200 p-6 text-center text-sm font-bold text-slate-400">
+                Chưa có thông báo.
+              </div>
+            </div>
+          </div>
+        </aside>
+      </section>
+    </main>
+
+    <QuickTaskModal :isOpen="isCreateModalOpen" @close="isCreateModalOpen = false" />
+    <TaskDetailModal :isOpen="isDetailModalOpen" :taskId="activeTaskId" @close="isDetailModalOpen = false" />
+  </div>
+</template>

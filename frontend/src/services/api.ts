@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { mockStorage, type User, type Project, type Task, type Comment, type SubTask, type WorkLog, type Notification, type ActivityLog } from './mockData';
+import { mockStorage, type User, type UserCredential, type Project, type Task, type Comment, type SubTask, type WorkLog, type Notification, type ActivityLog } from './mockData';
 
 const browserHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
 export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || `http://${browserHost}:7000/api`;
@@ -425,6 +425,25 @@ export const apiService = {
     }
     const response = await apiClient.put<User>(`/users/${userId}/role`, { role });
     return response.data;
+  },
+
+  async getUserCredentials(): Promise<UserCredential[]> {
+    if (USE_MOCK) {
+      return Promise.resolve(mockStorage.getUsers().map(user => ({
+        id: user.id,
+        fullName: user.fullName,
+        email: user.email || '',
+        role: user.role,
+        password: user.email === 'admin@projecthub.com' ? 'admin123' : '123456'
+      })));
+    }
+    const response = await apiClient.get<UserCredential[]>('/users/credentials');
+    return response.data;
+  },
+
+  async resetUserPassword(userId: string, newPassword: string): Promise<void> {
+    if (USE_MOCK) return Promise.resolve();
+    await apiClient.put(`/users/${userId}/password`, { newPassword });
   },
 
   // --- PROJECT PROGRESS API ---

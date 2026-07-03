@@ -1,7 +1,7 @@
 <template>
   <div class="min-h-screen bg-[#f6f8fb]">
-    <header class="sticky top-0 z-10 border-b border-slate-200/70 bg-white/90 px-8 py-5 backdrop-blur">
-      <div class="mx-auto flex max-w-7xl items-center justify-between">
+    <header class="sticky top-0 z-10 border-b border-slate-200/70 bg-white/90 px-4 py-5 backdrop-blur lg:px-8">
+      <div class="mx-auto flex max-w-7xl flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p class="text-[11px] font-black uppercase tracking-[0.22em] text-teal-600">NotifyDB / User Account</p>
           <h1 class="mt-1 text-2xl font-black text-slate-950">Hồ sơ cá nhân</h1>
@@ -15,8 +15,8 @@
       </div>
     </header>
 
-    <main class="mx-auto grid max-w-7xl grid-cols-12 gap-6 px-8 py-7">
-      <section class="col-span-4 space-y-6">
+    <main class="mx-auto grid max-w-7xl gap-6 px-4 py-7 lg:grid-cols-12 lg:px-8">
+      <section class="space-y-6 lg:col-span-4">
         <div class="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div class="h-28 bg-[linear-gradient(135deg,#0f766e,#2563eb_48%,#f97316)]"></div>
           <div class="-mt-12 px-6 pb-6">
@@ -67,12 +67,12 @@
         </div>
       </section>
 
-      <section class="col-span-8 space-y-6">
+      <section class="space-y-6 lg:col-span-8">
         <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
           <div class="flex items-start justify-between gap-4">
             <div>
               <h2 class="text-base font-black text-slate-950">Cập nhật hồ sơ</h2>
-              <p class="mt-1 text-sm text-slate-500">Dữ liệu được lưu ở `NotifyDB.dbo.Users`; sau khi lưu hệ thống cấp lại JWT mới.</p>
+              <p class="mt-1 text-sm text-slate-500">Cập nhật thông tin hiển thị và ảnh đại diện của tài khoản.</p>
             </div>
             <button
               type="button"
@@ -83,7 +83,7 @@
             </button>
           </div>
 
-          <form class="mt-5 grid grid-cols-2 gap-4" @submit.prevent="saveProfile">
+          <form class="mt-5 grid gap-4 sm:grid-cols-2" @submit.prevent="saveProfile">
             <label class="space-y-2">
               <span class="text-xs font-black uppercase text-slate-500">Họ tên</span>
               <input
@@ -102,7 +102,7 @@
               />
             </label>
 
-            <label class="col-span-2 space-y-2">
+            <label class="space-y-2 sm:col-span-2">
               <span class="text-xs font-black uppercase text-slate-500">Avatar URL</span>
               <input
                 v-model="profileForm.avatarUrl"
@@ -110,7 +110,7 @@
               />
             </label>
 
-            <div class="col-span-2 flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+            <div class="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 sm:col-span-2 sm:flex-row sm:items-center sm:justify-between">
               <p class="text-xs font-bold" :class="profileMessage.type === 'error' ? 'text-rose-600' : 'text-emerald-700'">
                 {{ profileMessage.text }}
               </p>
@@ -126,10 +126,10 @@
           </form>
         </div>
 
-        <div class="grid grid-cols-2 gap-6">
+        <div class="grid gap-6 xl:grid-cols-2">
           <div class="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 class="text-base font-black text-slate-950">Đổi mật khẩu</h2>
-            <p class="mt-1 text-sm text-slate-500">Endpoint nhóm 3: `PUT /api/users/me/password`.</p>
+            <p class="mt-1 text-sm text-slate-500">Bảo vệ tài khoản bằng mật khẩu mới an toàn hơn.</p>
 
             <form class="mt-5 space-y-3" @submit.prevent="changePassword">
               <input

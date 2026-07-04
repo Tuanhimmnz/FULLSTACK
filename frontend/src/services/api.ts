@@ -3,7 +3,13 @@ import { mockStorage, type User, type UserCredential, type Project, type Task, t
 import { repairApiText } from '../utils/text';
 
 const browserHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || `http://${browserHost}:7000/api`;
+const browserProtocol = typeof window !== 'undefined' ? window.location.protocol : 'http:';
+const localHosts = new Set(['localhost', '127.0.0.1', '0.0.0.0']);
+export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || (
+  localHosts.has(browserHost)
+    ? `http://${browserHost}:7000/api`
+    : `${browserProtocol}//${browserHost}/api`
+);
 export const gatewayHealthUrl = apiBaseUrl.replace(/\/api\/?$/, '/health');
 
 // Khởi tạo Axios client với cấu hình kết nối tới .NET Core Backend

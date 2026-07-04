@@ -30,19 +30,20 @@ admin@projecthub.com / admin123
 
 ## 3. Request bắt buộc phải đi qua Gateway
 
-Khi chạy local với Gateway `7100`:
+Khi chạy local với Gateway `7000`:
 
 ```text
-POST  http://localhost:7100/api/auth/login
-GET   http://localhost:7100/api/projects
-GET   http://localhost:7100/api/tasks
-GET   http://localhost:7100/api/notifications
-GET   http://localhost:7100/api/users
-GET   http://localhost:7100/api/users/credentials
-POST  http://localhost:7100/api/tasks/{taskId}/comments
-PUT   http://localhost:7100/api/tasks/{taskId}/subtasks/{subTaskId}/toggle
-POST  http://localhost:7100/api/tasks/{taskId}/worklogs
-PATCH http://localhost:7100/api/notifications/{id}/read
+POST  http://localhost:7000/api/auth/login
+GET   http://localhost:7000/api/projects
+GET   http://localhost:7000/api/tasks
+GET   http://localhost:7000/api/notifications
+GET   http://localhost:7000/api/users
+GET   http://localhost:7000/api/users/credentials
+PUT   http://localhost:7000/api/users/{id}
+POST  http://localhost:7000/api/tasks/{taskId}/comments
+PUT   http://localhost:7000/api/tasks/{taskId}/subtasks/{subTaskId}/toggle
+POST  http://localhost:7000/api/tasks/{taskId}/worklogs
+PATCH http://localhost:7000/api/notifications/{id}/read
 ```
 
 Khi chạy VPS:
@@ -54,6 +55,7 @@ GET   http://103.77.242.126/api/tasks
 GET   http://103.77.242.126/api/notifications
 GET   http://103.77.242.126/api/users
 GET   http://103.77.242.126/api/users/credentials
+PUT   http://103.77.242.126/api/users/{id}
 POST  http://103.77.242.126/api/tasks/{taskId}/comments
 PUT   http://103.77.242.126/api/tasks/{taskId}/subtasks/{subTaskId}/toggle
 POST  http://103.77.242.126/api/tasks/{taskId}/worklogs
@@ -84,7 +86,7 @@ Nếu thấy request nghiệp vụ đi thẳng vào các port trên thì sai ki�
 5. Vào Tasks, lọc và chuyển trang để chứng minh nhiều dữ liệu task.
 6. Vào Kanban, đổi trạng thái task để chứng minh nhóm 2.
 7. Mở Task Detail, tick subtask, log giờ, comment và @mention để chứng minh nhóm 3.
-8. Vào Admin, xem thống kê user, danh sách tài khoản, role, mật khẩu demo và reset mật khẩu.
+8. Vào Admin, xem thống kê user, tìm kiếm/phân trang, sửa hồ sơ user, đổi role, xem mật khẩu demo và reset mật khẩu.
 9. Vào Notifications, mark read, mark all read hoặc delete.
 10. Vào Settings/Diagnostics để kiểm tra Gateway và 3 service OK.
 

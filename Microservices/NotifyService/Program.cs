@@ -181,6 +181,50 @@ app.MapPut("/api/users/{id}/role", async (string id, RoleUpdateRequest request, 
     return Results.Ok(updated);
 }).RequireAuthorization();
 
+app.MapPut("/api/users/{id}", async (string id, AdminUserUpdateRequest request, ClaimsPrincipal principal) =>
+{
+    var actor = CurrentUser(principal);
+    if (actor is null) return Results.Unauthorized();
+    if (!IsManager(actor)) return Results.Forbid();
+
+    await using var conn = await db.OpenAsync();
+    var current = await QuerySingleAsync<UserDto>(conn,
+        "SELECT id, fullName, avatarUrl, role, CAST(isOnline AS bit) AS isOnline, email FROM Users WHERE id=@id",
+        P("@id", id));
+    if (current is null) return Results.NotFound();
+
+    var allowedRoles = new[] { "Admin", "Project Manager", "Backend Dev", "Frontend Lead", "Business Analyst", "DevOps Engineer", "QA Engineer", "UI/UX Designer", "Member", "Developer", "Viewer" };
+    var role = string.IsNullOrWhiteSpace(request.Role) ? current.Role : request.Role.Trim();
+    if (!allowedRoles.Contains(role)) return Results.BadRequest(new { error = "Vai trò không hợp lệ" });
+
+    var fullName = string.IsNullOrWhiteSpace(request.FullName) ? current.FullName : request.FullName.Trim();
+    var email = string.IsNullOrWhiteSpace(request.Email) ? current.Email : request.Email.Trim().ToLowerInvariant();
+    if (!email.Contains('@')) return Results.BadRequest(new { error = "Email không hợp lệ" });
+
+    var duplicated = await ExecuteScalarAsync<int>(conn,
+        "SELECT COUNT(1) FROM Users WHERE email=@email AND id<>@id",
+        P("@email", email), P("@id", id));
+    if (duplicated > 0) return Results.BadRequest(new { error = "Email đã tồn tại" });
+
+    var avatarUrl = string.IsNullOrWhiteSpace(request.AvatarUrl) ? current.AvatarUrl : request.AvatarUrl.Trim();
+    var isOnline = request.IsOnline ?? current.IsOnline;
+
+    await ExecuteAsync(conn,
+        """
+        UPDATE Users
+        SET fullName=@fullName, email=@email, avatarUrl=@avatarUrl, role=@role, isOnline=@isOnline
+        WHERE id=@id
+        """,
+        P("@id", id), P("@fullName", fullName), P("@email", email), P("@avatarUrl", avatarUrl),
+        P("@role", role), P("@isOnline", isOnline));
+
+    var updated = await QuerySingleAsync<UserDto>(conn,
+        "SELECT id, fullName, avatarUrl, role, CAST(isOnline AS bit) AS isOnline, email FROM Users WHERE id=@id",
+        P("@id", id));
+    await LogAsync(conn, actor, "user.profile.updated", "user", id, null, $"{actor.FullName} cập nhật hồ sơ {updated?.FullName ?? id}");
+    return Results.Ok(updated);
+}).RequireAuthorization();
+
 app.MapGet("/api/tasks/{taskId}/comments", async (string taskId) =>
 {
     await using var conn = await db.OpenAsync();
@@ -812,6 +856,7 @@ record RegisterRequest(string FullName, string Email, string Password, string? R
 record ProfileUpdateRequest(string? FullName, string? AvatarUrl);
 record PasswordUpdateRequest(string CurrentPassword, string NewPassword);
 record AdminPasswordUpdateRequest(string? NewPassword);
+record AdminUserUpdateRequest(string? FullName, string? Email, string? AvatarUrl, string? Role, bool? IsOnline);
 record RoleUpdateRequest(string? Role);
 record CommentRequest(string? Content);
 record NotificationCreateRequest(string UserId, string Title, string? Message, string? Type, string? TaskId, string? ProjectId);

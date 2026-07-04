@@ -11,6 +11,19 @@ API Gateway -> ProjectService / TaskService / NotifyService
 SQL Server -> ProjectDB / TaskDB / NotifyDB
 ```
 
+Luồng kết nối cần trình bày:
+
+```text
+Frontend Vue không biết port 5001/5002/5003.
+Frontend chỉ gọi http://<host>:7000/api hoặc http://103.77.242.126/api.
+Gateway nhận request, kiểm tra JWT, sau đó route:
+- /api/projects -> ProjectService của nhóm 1.
+- /api/tasks -> TaskService của nhóm 2.
+- /api/auth, /api/users, /api/notifications, /api/activity-logs, /api/tasks/{id}/comments -> NotifyService của nhóm 3.
+ProjectService và TaskService không ghi DB của nhóm 3; hai service này chỉ bắn internal event sang NotifyService.
+NotifyService nhận event để tạo notification và activity log.
+```
+
 ## 2. Tài khoản demo
 
 Tài khoản chính:
@@ -43,7 +56,7 @@ viewer01@projecthub.com / 123456
 viewer02@projecthub.com / 123456
 ```
 
-Admin có thể vào trang `Quản trị` để xem danh sách tài khoản, role, mật khẩu demo và reset mật khẩu.
+Admin có thể vào trang `Quản trị` để xem danh sách tài khoản, role, mật khẩu demo, sửa hồ sơ người dùng, phân trang danh sách và reset mật khẩu.
 
 ## 3. Chạy local để kiểm tra giao diện
 
@@ -95,6 +108,16 @@ Nhóm 3 - Notify Service + API Gateway + Frontend host:
 ```powershell
 docker compose -f docker-compose.group3.yml up -d --build
 npm run dev --prefix frontend -- --host 0.0.0.0 --port 8080
+```
+
+Lưu ý khi chỉ chạy phần nhóm 3:
+
+```text
+docker-compose.group3.yml chỉ chạy SQL Server, NotifyService và API Gateway.
+Các API nhóm 3 vẫn chạy đầy đủ: auth, users, comments, notifications, activity-logs, diagnostics.
+Nếu muốn demo cả /api/projects và /api/tasks thì phải chạy thêm group1/group2 hoặc chạy compose tổng.
+Ngày mai nếu thầy yêu cầu "mỗi nhóm chạy phần của mình", nhóm 3 mở group3, còn nhóm 1/2 mở compose riêng của họ.
+Khi muốn demo toàn bộ hệ thống kết nối đủ 3 nhóm, dùng docker-compose.microservices.yml hoặc docker-compose.prod.yml.
 ```
 
 Các cổng chính:
@@ -165,7 +188,21 @@ Tiến độ (Gantt): xem timeline task theo ngày/tuần, lọc theo project, m
 Thống kê: xem workload theo vai trò, phân bổ trạng thái, leaderboard năng suất.
 Tài liệu: lưu yêu cầu, API spec, checklist deploy, biên bản họp theo từng project.
 Task Detail: tick subtask, hoàn thành toàn bộ subtask, log giờ, comment, @mention.
-Admin: xem thống kê người dùng, danh sách tài khoản, role, mật khẩu demo, reset mật khẩu.
+Admin: xem thống kê người dùng, danh sách tài khoản có phân trang, sửa hồ sơ, đổi role, xem mật khẩu demo, reset mật khẩu.
 Notifications: lọc all/unread/read, mark read, mark all read, delete.
 Settings/Diagnostics: kiểm tra Gateway và 3 service.
+```
+
+## 8. Cách nói ngắn gọn với thầy
+
+```text
+Bọn em chia thành 3 service đúng theo nhóm. Nhóm 1 quản lý Project, nhóm 2 quản lý Task/Kanban,
+nhóm 3 quản lý Auth/User/Comment/Notification/Activity Log và vận hành Gateway.
+
+VueJS chạy trực tiếp trên host, không chạy Docker. Ba service backend và Gateway chạy bằng Docker.
+Frontend chỉ gọi Gateway. Gateway route request sang từng service theo path nên F12 chỉ thấy /api/... qua một địa chỉ.
+
+Các service dùng database riêng trong SQL Server, không foreign key chéo database.
+Khi ProjectService hoặc TaskService có sự kiện như giao task, đổi trạng thái, cập nhật member,
+service đó gửi event sang NotifyService để sinh thông báo trong app và ghi activity log.
 ```

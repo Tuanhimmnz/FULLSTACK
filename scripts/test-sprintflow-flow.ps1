@@ -69,6 +69,16 @@ if (-not $registered.token) { throw "Register did not return token" }
 $registeredLogin = Invoke-Api POST "$api/auth/login" @{ email = $demoEmail; password = "123456" }
 Write-Host "Registered and logged in: $($registeredLogin.user.email)" -ForegroundColor Green
 
+Write-Step "3.1.1 Admin update user profile through Gateway"
+$updatedDemoUser = Invoke-Api PUT "$api/users/$($registered.user.id)" @{
+  fullName = "Demo Tester Updated"
+  email = $demoEmail
+  avatarUrl = $registered.user.avatarUrl
+  role = "Member"
+  isOnline = $true
+} $headers
+Write-Host "Updated user profile: $($updatedDemoUser.fullName) / $($updatedDemoUser.email)" -ForegroundColor Green
+
 Write-Step "3.2 Admin reset password for a demo user"
 $targetCredential = @($credentials | Where-Object { $_.email -eq "viewer02@projecthub.com" } | Select-Object -First 1)[0]
 if ($targetCredential) {
@@ -152,5 +162,6 @@ Write-Host "POST  $api/tasks/$($task.id)/comments"
 Write-Host "PUT   $api/tasks/$($task.id)/subtasks/$($subTask.id)/toggle"
 Write-Host "POST  $api/tasks/$($task.id)/worklogs"
 Write-Host "GET   $api/users/credentials"
+Write-Host "PUT   $api/users/$($registered.user.id)"
 Write-Host "GET   $api/notifications"
 Write-Host "GET   $api/diagnostics/services"

@@ -75,11 +75,11 @@ app.MapPost("/api/projects", async (ProjectCreateRequest request, ClaimsPrincipa
             P("@projectId", id), P("@userId", member.Id), P("@role", string.IsNullOrWhiteSpace(member.Role) ? "Member" : member.Role));
     }
 
-    await AddProjectActivityAsync(conn, id, actor, "project.created", $"Created project {request.Name}");
+    await AddProjectActivityAsync(conn, id, actor, "project.created", $"Tạo dự án {request.Name}");
     await PublishProjectEventAsync(httpClientFactory, new ProjectEventRequest(
         "project.created",
-        "New project",
-        $"{actor.FullName} created project {request.Name}.",
+        "Dự án mới",
+        $"{actor.FullName} đã tạo dự án {request.Name}.",
         id,
         (request.Members ?? []).Select(m => m.Id).Distinct().ToList(),
         actor));
@@ -100,7 +100,7 @@ app.MapPut("/api/projects/{id}", async (string id, ProjectUpdateRequest request,
         """,
         P("@id", id), P("@name", request.Name), P("@description", request.Description),
         P("@status", request.Status), P("@statusText", request.StatusText), P("@color", request.Color));
-    await AddProjectActivityAsync(conn, id, actor, "project.updated", $"Updated project {request.Name}");
+    await AddProjectActivityAsync(conn, id, actor, "project.updated", $"Cập nhật dự án {request.Name}");
     var project = (await LoadProjectsAsync(conn, id)).FirstOrDefault();
     return project is null ? Results.NotFound() : Results.Ok(project);
 }).RequireAuthorization();
@@ -110,7 +110,7 @@ app.MapDelete("/api/projects/{id}", async (string id, ClaimsPrincipal principal)
     if (!IsManager(principal)) return Results.Forbid();
     var actor = CurrentUser(principal);
     await using var conn = await db.OpenAsync();
-    await AddProjectActivityAsync(conn, id, actor, "project.deleted", $"Deleted project {id}");
+    await AddProjectActivityAsync(conn, id, actor, "project.deleted", $"Xóa dự án {id}");
     await ExecuteAsync(conn, "DELETE FROM ProjectMembers WHERE projectId=@id", P("@id", id));
     await ExecuteAsync(conn, "DELETE FROM Sprints WHERE projectId=@id", P("@id", id));
     await ExecuteAsync(conn, "DELETE FROM Milestones WHERE projectId=@id", P("@id", id));
@@ -123,8 +123,8 @@ app.MapPut("/api/projects/{id}/progress", async (string id, ProjectProgressReque
     if (!IsManager(principal)) return Results.Forbid();
     await using var conn = await db.OpenAsync();
     await ExecuteAsync(conn, "UPDATE Projects SET progress=@progress WHERE id=@id", P("@progress", request.Progress), P("@id", id));
-    await AddProjectActivityAsync(conn, id, CurrentUser(principal), "project.progress.updated", $"Progress updated to {request.Progress}%");
-    return Results.Ok(new { message = "Project progress updated" });
+    await AddProjectActivityAsync(conn, id, CurrentUser(principal), "project.progress.updated", $"Cập nhật tiến độ thành {request.Progress}%");
+    return Results.Ok(new { message = "Đã cập nhật tiến độ dự án" });
 }).RequireAuthorization();
 
 app.MapPut("/api/projects/{id}/members", async (string id, ProjectMembersRequest request, ClaimsPrincipal principal, IHttpClientFactory httpClientFactory) =>
@@ -141,15 +141,15 @@ app.MapPut("/api/projects/{id}/members", async (string id, ProjectMembersRequest
             P("@projectId", id), P("@userId", member.UserId), P("@role", string.IsNullOrWhiteSpace(member.Role) ? "Member" : member.Role));
     }
 
-    await AddProjectActivityAsync(conn, id, actor, "project.member.updated", $"Updated project members for {id}");
+    await AddProjectActivityAsync(conn, id, actor, "project.member.updated", $"Cập nhật thành viên dự án {id}");
     await PublishProjectEventAsync(httpClientFactory, new ProjectEventRequest(
         "project.member.added",
-        "Project members updated",
-        $"{actor.FullName} updated project members.",
+        "Cập nhật thành viên dự án",
+        $"{actor.FullName} đã cập nhật thành viên dự án.",
         id,
         members.Select(m => m.UserId).Distinct().ToList(),
         actor));
-    return Results.Ok(new { message = "Project members updated" });
+    return Results.Ok(new { message = "Đã cập nhật thành viên dự án" });
 }).RequireAuthorization();
 
 app.MapGet("/api/projects/{id}/sprints", async (string id) =>
@@ -173,11 +173,11 @@ app.MapPost("/api/projects/{id}/sprints", async (string id, SprintCreateRequest 
         "INSERT INTO Sprints(id, projectId, name, goal, startDate, endDate, status) VALUES(@id,@projectId,@name,@goal,@startDate,@endDate,@status)",
         P("@id", sprintId), P("@projectId", id), P("@name", request.Name), P("@goal", request.Goal),
         P("@startDate", request.StartDate), P("@endDate", request.EndDate), P("@status", status));
-    await AddProjectActivityAsync(conn, id, actor, "sprint.started", $"Created sprint {request.Name}");
+    await AddProjectActivityAsync(conn, id, actor, "sprint.started", $"Tạo sprint {request.Name}");
     await PublishProjectEventAsync(httpClientFactory, new ProjectEventRequest(
         "sprint.started",
-        "Sprint started",
-        $"{actor.FullName} created sprint {request.Name}.",
+        "Sprint đã bắt đầu",
+        $"{actor.FullName} đã tạo sprint {request.Name}.",
         id,
         await GetProjectRecipientIdsAsync(conn, id),
         actor));
@@ -210,14 +210,14 @@ app.MapPost("/api/projects/{id}/milestones", async (string id, MilestoneCreateRe
         """,
         P("@id", milestoneId), P("@projectId", id), P("@name", request.Name), P("@description", request.Description),
         P("@deadline", request.Deadline), P("@status", status), P("@completedAt", (object?)completedAt ?? DBNull.Value));
-    await AddProjectActivityAsync(conn, id, actor, "milestone.created", $"Created milestone {request.Name}");
+    await AddProjectActivityAsync(conn, id, actor, "milestone.created", $"Tạo milestone {request.Name}");
 
     if (status.Equals("Completed", StringComparison.OrdinalIgnoreCase))
     {
         await PublishProjectEventAsync(httpClientFactory, new ProjectEventRequest(
             "milestone.completed",
-            "Milestone completed",
-            $"{actor.FullName} completed milestone {request.Name}.",
+            "Milestone đã hoàn thành",
+            $"{actor.FullName} đã hoàn thành milestone {request.Name}.",
             id,
             await GetProjectRecipientIdsAsync(conn, id),
             actor));

@@ -227,7 +227,7 @@
       <div v-if="activeSubTab === 'users'" class="bg-white border border-slate-100 rounded-2xl p-6 shadow-sm text-left space-y-5">
         <div class="space-y-1">
           <h2 class="text-base font-bold text-slate-800">Quản lý Tài khoản & Phân quyền</h2>
-          <p class="text-xs text-slate-500">Danh sách thành viên hệ thống. Cập nhật các quyền hoặc vai trò trực tiếp.</p>
+          <p class="text-xs text-slate-500">Danh sách hồ sơ người dùng demo. Admin có thể sửa thông tin, đổi vai trò và đặt lại mật khẩu.</p>
         </div>
 
         <div class="grid gap-3 md:grid-cols-4">
@@ -237,8 +237,31 @@
           </div>
         </div>
 
+        <div class="grid gap-3 lg:grid-cols-[minmax(0,1fr)_11rem_10rem]">
+          <div class="relative">
+            <input
+              v-model="userSearch"
+              type="text"
+              placeholder="Tìm theo tên, email, role hoặc ID..."
+              class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 outline-none transition focus:border-indigo-400 focus:bg-white"
+            />
+          </div>
+          <select v-model.number="usersPageSize" class="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-sm font-bold text-slate-700 outline-none focus:border-indigo-400">
+            <option :value="8">8 người / trang</option>
+            <option :value="12">12 người / trang</option>
+            <option :value="20">20 người / trang</option>
+          </select>
+          <button
+            type="button"
+            class="rounded-2xl border border-indigo-200 bg-indigo-50 px-4 py-3 text-sm font-black text-indigo-700 transition hover:bg-indigo-100"
+            @click="taskStore.refreshUserCredentials()"
+          >
+            Tải lại tài khoản
+          </button>
+        </div>
+
         <div class="overflow-x-auto">
-          <table class="w-full min-w-[980px] text-xs text-slate-600 font-medium">
+          <table class="w-full min-w-[1120px] text-xs text-slate-600 font-medium">
             <thead>
               <tr class="border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider text-left">
                 <th class="pb-3.5 pl-2">Họ tên & Tài khoản</th>
@@ -247,10 +270,11 @@
                 <th class="pb-3.5">Trạng thái</th>
                 <th class="pb-3.5">Vai trò hệ thống (Role)</th>
                 <th class="pb-3.5">Reset mật khẩu</th>
+                <th class="pb-3.5 text-right pr-2">Thao tác</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-slate-50">
-              <tr v-for="user in taskStore.users" :key="user.id" class="hover:bg-slate-50/50 transition-colors">
+              <tr v-for="user in pagedUsers" :key="user.id" class="hover:bg-slate-50/50 transition-colors">
                 <td class="py-3.5 pl-2 flex items-center space-x-3">
                   <img
                     :src="avatarFor(user.fullName, user.avatarUrl, '6366f1')"
@@ -286,17 +310,7 @@
                       @change="changeUserRole(user.id, user.role)"
                       class="w-full px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 font-bold focus:outline-none focus:border-indigo-500 transition-all cursor-pointer appearance-none pr-8"
                     >
-                      <option value="Admin">Admin</option>
-                      <option value="Project Manager">Project Manager</option>
-                      <option value="Backend Dev">Backend Dev</option>
-                      <option value="Frontend Lead">Frontend Lead</option>
-                      <option value="Business Analyst">Business Analyst</option>
-                      <option value="DevOps Engineer">DevOps Engineer</option>
-                      <option value="QA Engineer">QA Engineer</option>
-                      <option value="UI/UX Designer">UI/UX Designer</option>
-                      <option value="Developer">Developer</option>
-                      <option value="Member">Member</option>
-                      <option value="Viewer">Viewer</option>
+                      <option v-for="role in roleOptions" :key="role" :value="role">{{ role }}</option>
                     </select>
                     <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-slate-400">
                       <svg class="fill-current h-3.5 w-3.5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
@@ -320,12 +334,130 @@
                     </button>
                   </div>
                 </td>
+                <td class="py-3.5 pr-2 text-right">
+                  <button
+                    type="button"
+                    class="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-black text-slate-700 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
+                    @click="openUserEditor(user)"
+                  >
+                    Sửa hồ sơ
+                  </button>
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
+
+        <div v-if="filteredUsers.length === 0" class="rounded-2xl border border-dashed border-slate-200 p-8 text-center text-sm font-black text-slate-500">
+          Không tìm thấy người dùng phù hợp.
+        </div>
+
+        <div class="flex flex-col gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
+          <p class="text-xs font-bold text-slate-500">
+            Hiển thị {{ pagedUsers.length }} / {{ filteredUsers.length }} người dùng · Trang {{ userPage }} / {{ totalUserPages }}
+          </p>
+          <div class="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-40"
+              :disabled="userPage === 1"
+              @click="userPage--"
+            >
+              Trước
+            </button>
+            <button
+              v-for="page in visibleUserPages"
+              :key="page"
+              type="button"
+              class="size-9 rounded-xl text-xs font-black transition"
+              :class="page === userPage ? 'bg-slate-950 text-white' : 'border border-slate-200 text-slate-600 hover:bg-slate-50'"
+              @click="userPage = page"
+            >
+              {{ page }}
+            </button>
+            <button
+              type="button"
+              class="rounded-xl border border-slate-200 px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-40"
+              :disabled="userPage === totalUserPages"
+              @click="userPage++"
+            >
+              Sau
+            </button>
+          </div>
+        </div>
       </div>
     </div>
+
+    <!-- Modal: Edit User Profile -->
+    <Transition name="modal">
+      <div v-if="isUserEditModalOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-4 backdrop-blur-sm">
+        <form
+          class="w-full max-w-2xl overflow-hidden rounded-3xl border border-slate-100 bg-white text-left shadow-2xl shadow-slate-950/20"
+          @submit.prevent="submitUserProfile"
+        >
+          <div class="flex items-center justify-between border-b border-slate-100 bg-slate-50/70 px-6 py-4">
+            <div>
+              <h3 class="text-base font-black text-slate-900">Chỉnh sửa hồ sơ người dùng</h3>
+              <p class="mt-1 text-xs font-semibold text-slate-500">Dành cho Admin nhóm 3: Auth/User Management.</p>
+            </div>
+            <button type="button" class="rounded-xl p-2 text-slate-400 transition hover:bg-white hover:text-slate-700" @click="isUserEditModalOpen = false">
+              <X class="size-5" />
+            </button>
+          </div>
+
+          <div class="grid gap-5 p-6 md:grid-cols-[11rem_minmax(0,1fr)]">
+            <div class="rounded-3xl border border-slate-100 bg-slate-50 p-4 text-center">
+              <img
+                :src="avatarFor(userEditForm.fullName || 'User', userEditForm.avatarUrl, '6366f1')"
+                @error="onAvatarError($event, userEditForm.fullName || 'User', '6366f1')"
+                alt="Avatar"
+                class="mx-auto size-20 rounded-3xl border-4 border-white object-cover shadow-sm"
+              />
+              <p class="mt-3 text-sm font-black text-slate-900">{{ userEditForm.fullName || 'Người dùng' }}</p>
+              <p class="mt-1 text-[11px] font-bold text-slate-500">{{ userEditForm.role }}</p>
+              <p class="mt-2 rounded-full bg-white px-3 py-1 text-[10px] font-black text-slate-500">ID: {{ editingUserId }}</p>
+            </div>
+
+            <div class="grid gap-4 sm:grid-cols-2">
+              <label class="space-y-1.5">
+                <span class="text-[10px] font-black uppercase text-slate-400">Họ tên</span>
+                <input v-model="userEditForm.fullName" required class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-800 outline-none focus:border-indigo-400 focus:bg-white" />
+              </label>
+              <label class="space-y-1.5">
+                <span class="text-[10px] font-black uppercase text-slate-400">Email đăng nhập</span>
+                <input v-model="userEditForm.email" type="email" required class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-800 outline-none focus:border-indigo-400 focus:bg-white" />
+              </label>
+              <label class="space-y-1.5">
+                <span class="text-[10px] font-black uppercase text-slate-400">Vai trò</span>
+                <select v-model="userEditForm.role" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-800 outline-none focus:border-indigo-400 focus:bg-white">
+                  <option v-for="role in roleOptions" :key="role" :value="role">{{ role }}</option>
+                </select>
+              </label>
+              <label class="space-y-1.5">
+                <span class="text-[10px] font-black uppercase text-slate-400">Trạng thái</span>
+                <select v-model="userEditForm.isOnline" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-800 outline-none focus:border-indigo-400 focus:bg-white">
+                  <option :value="true">Trực tuyến</option>
+                  <option :value="false">Ngoại tuyến</option>
+                </select>
+              </label>
+              <label class="space-y-1.5 sm:col-span-2">
+                <span class="text-[10px] font-black uppercase text-slate-400">Avatar URL</span>
+                <input v-model="userEditForm.avatarUrl" class="w-full rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm font-bold text-slate-800 outline-none focus:border-indigo-400 focus:bg-white" />
+              </label>
+            </div>
+          </div>
+
+          <div class="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/70 px-6 py-4 sm:flex-row sm:justify-end">
+            <button type="button" class="rounded-2xl border border-slate-200 bg-white px-5 py-2.5 text-sm font-black text-slate-600 transition hover:bg-slate-100" @click="isUserEditModalOpen = false">
+              Hủy
+            </button>
+            <button type="submit" class="rounded-2xl bg-indigo-600 px-5 py-2.5 text-sm font-black text-white shadow-lg shadow-indigo-500/20 transition hover:bg-indigo-700">
+              Lưu hồ sơ
+            </button>
+          </div>
+        </form>
+      </div>
+    </Transition>
 
     <!-- Modal: Create New Project -->
     <Transition name="modal">
@@ -426,7 +558,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, reactive } from 'vue';
+import { ref, computed, onMounted, reactive, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import {
   ShieldCheck,
@@ -440,7 +572,7 @@ import {
 } from '@lucide/vue';
 import { useTaskStore } from '../stores/taskStore';
 import { avatarFor, onAvatarError } from '../utils/avatar';
-import type { Project } from '../services/mockData';
+import type { Project, User } from '../services/mockData';
 
 const taskStore = useTaskStore();
 const router = useRouter();
@@ -450,7 +582,33 @@ const activeSubTab = ref<'projects' | 'users'>('projects');
 const selectedProject = ref<Project | null>(null);
 const quickSelectedMemberId = ref('');
 const isCreateProjectModalOpen = ref(false);
+const isUserEditModalOpen = ref(false);
+const userSearch = ref('');
+const userPage = ref(1);
+const usersPageSize = ref(8);
+const editingUserId = ref('');
 const resetPasswords = reactive<Record<string, string>>({});
+const userEditForm = reactive({
+  fullName: '',
+  email: '',
+  avatarUrl: '',
+  role: 'Member',
+  isOnline: true
+});
+
+const roleOptions = [
+  'Admin',
+  'Project Manager',
+  'Backend Dev',
+  'Frontend Lead',
+  'Business Analyst',
+  'DevOps Engineer',
+  'QA Engineer',
+  'UI/UX Designer',
+  'Developer',
+  'Member',
+  'Viewer'
+];
 
 // Create Project fields
 const newProject = ref<Omit<Project, 'id' | 'createdAt' | 'progress'>>({
@@ -501,6 +659,43 @@ const userStats = computed(() => [
   { label: 'Đang online', value: taskStore.users.filter(user => user.isOnline).length }
 ]);
 
+const filteredUsers = computed(() => {
+  const query = userSearch.value.trim().toLowerCase();
+  if (!query) return taskStore.users;
+  return taskStore.users.filter(user => {
+    const credential = credentialsById.value[user.id];
+    return [
+      user.id,
+      user.fullName,
+      user.email,
+      user.role,
+      credential?.password
+    ].filter(Boolean).join(' ').toLowerCase().includes(query);
+  });
+});
+
+const totalUserPages = computed(() => Math.max(1, Math.ceil(filteredUsers.value.length / usersPageSize.value)));
+const pagedUsers = computed(() => {
+  const start = (userPage.value - 1) * usersPageSize.value;
+  return filteredUsers.value.slice(start, start + usersPageSize.value);
+});
+
+const visibleUserPages = computed(() => {
+  const pages: number[] = [];
+  const start = Math.max(1, userPage.value - 2);
+  const end = Math.min(totalUserPages.value, start + 4);
+  for (let page = start; page <= end; page += 1) pages.push(page);
+  return pages;
+});
+
+watch([userSearch, usersPageSize], () => {
+  userPage.value = 1;
+});
+
+watch(totalUserPages, (pages) => {
+  if (userPage.value > pages) userPage.value = pages;
+});
+
 function defaultPassword(email?: string) {
   return email === 'admin@projecthub.com' ? 'admin123' : '123456';
 }
@@ -516,6 +711,34 @@ async function resetPasswordFor(userId: string) {
   await taskStore.resetUserPassword(userId, newPassword);
   await taskStore.refreshUserCredentials();
   resetPasswords[userId] = '';
+}
+
+function openUserEditor(user: User) {
+  editingUserId.value = user.id;
+  userEditForm.fullName = user.fullName;
+  userEditForm.email = user.email || '';
+  userEditForm.avatarUrl = user.avatarUrl || '';
+  userEditForm.role = user.role || 'Member';
+  userEditForm.isOnline = Boolean(user.isOnline);
+  isUserEditModalOpen.value = true;
+}
+
+async function submitUserProfile() {
+  if (!editingUserId.value) return;
+  if (!userEditForm.fullName.trim() || !userEditForm.email.trim()) {
+    alert('Họ tên và email không được để trống.');
+    return;
+  }
+
+  await taskStore.updateUserProfileByAdmin(editingUserId.value, {
+    fullName: userEditForm.fullName.trim(),
+    email: userEditForm.email.trim(),
+    avatarUrl: userEditForm.avatarUrl.trim(),
+    role: userEditForm.role,
+    isOnline: userEditForm.isOnline
+  });
+  await taskStore.refreshUserCredentials();
+  isUserEditModalOpen.value = false;
 }
 
 function getAssigneeName(assigneeId?: string) {

@@ -73,7 +73,7 @@ app.MapPost("/api/tasks", async (TaskCreateRequest request, ClaimsPrincipal prin
         P("@projectId", request.ProjectId), P("@assigneeId", (object?)request.AssigneeId ?? DBNull.Value),
         P("@creatorId", creatorId), P("@createdAt", createdAt), P("@labels", labels),
         P("@estimatedHours", request.EstimatedHours));
-    await AddTaskHistoryAsync(conn, id, user, "task.created", null, request.Status, $"Created task {request.Title}");
+    await AddTaskHistoryAsync(conn, id, user, "task.created", null, request.Status, $"Tạo công việc {request.Title}");
 
     if (!string.IsNullOrWhiteSpace(request.AssigneeId))
     {
@@ -108,7 +108,7 @@ app.MapPut("/api/tasks/{id}", async (string id, TaskUpdateRequest request, Claim
         P("@status", request.Status), P("@priority", request.Priority), P("@dueDate", request.DueDate),
         P("@projectId", request.ProjectId), P("@assigneeId", (object?)request.AssigneeId ?? DBNull.Value),
         P("@creatorId", request.CreatorId), P("@labels", labels), P("@estimatedHours", request.EstimatedHours));
-    await AddTaskHistoryAsync(conn, id, user, "task.updated", oldTask.Status, request.Status, $"Updated task {request.Title}");
+    await AddTaskHistoryAsync(conn, id, user, "task.updated", oldTask.Status, request.Status, $"Cập nhật công việc {request.Title}");
 
     if (oldTask.Status != request.Status)
     {
@@ -125,13 +125,13 @@ app.MapPut("/api/tasks/{id}", async (string id, TaskUpdateRequest request, Claim
     {
         await PublishTaskEventAsync(httpClientFactory, new TaskEventRequest(
             "task.assigned",
-            "Task assigned",
-            $"{user.FullName} assigned task \"{request.Title}\".",
+            "Bạn được giao công việc",
+            $"{user.FullName} đã giao công việc \"{request.Title}\" cho bạn.",
             id,
             request.ProjectId,
             SplitIds(request.AssigneeId),
             user));
-        await AddTaskHistoryAsync(conn, id, user, "task.assigned", oldTask.AssigneeId, request.AssigneeId, $"Assigned task {request.Title}");
+        await AddTaskHistoryAsync(conn, id, user, "task.assigned", oldTask.AssigneeId, request.AssigneeId, $"Phân công công việc {request.Title}");
     }
 
     var updated = await QuerySingleAsync<TaskRow>(conn, "SELECT * FROM Tasks WHERE id=@id", P("@id", id));
@@ -147,7 +147,7 @@ app.MapPatch("/api/tasks/{id}/status", async (string id, StatusRequest request, 
     if (task is null) return Results.NotFound();
     if (!IsManager(user) && !SplitIds(task.AssigneeId).Contains(user.Id)) return Results.Forbid();
     await ExecuteAsync(conn, "UPDATE Tasks SET status=@status WHERE id=@id", P("@status", request.Status), P("@id", id));
-    await AddTaskHistoryAsync(conn, id, user, "task.status.changed", task.Status, request.Status, $"Status changed from {task.Status} to {request.Status}");
+    await AddTaskHistoryAsync(conn, id, user, "task.status.changed", task.Status, request.Status, $"Đổi trạng thái từ {task.Status} sang {request.Status}");
     await PublishTaskEventAsync(httpClientFactory, new TaskEventRequest(
         "task.status.changed",
         "Trạng thái công việc thay đổi",
@@ -175,7 +175,7 @@ app.MapPost("/api/tasks/{id}/subtasks", async (string id, SubTaskRequest request
     await using var conn = await db.OpenAsync();
     await ExecuteAsync(conn, "INSERT INTO SubTasks(id, taskId, title, isCompleted) VALUES(@id,@taskId,@title,0)",
         P("@id", subId), P("@taskId", id), P("@title", request.Title));
-    await AddTaskHistoryAsync(conn, id, user, "subtask.created", null, request.Title, $"Created subtask {request.Title}");
+    await AddTaskHistoryAsync(conn, id, user, "subtask.created", null, request.Title, $"Tạo công việc con {request.Title}");
     return Results.Created($"/api/tasks/{id}/subtasks/{subId}", new SubTaskClientDto(subId, request.Title, false));
 }).RequireAuthorization();
 
@@ -193,7 +193,7 @@ app.MapPut("/api/tasks/{id}/subtasks/{subTaskId}", async (string id, string subT
     var isCompleted = request.IsCompleted ?? current.IsCompleted;
     await ExecuteAsync(conn, "UPDATE SubTasks SET title=@title, isCompleted=@isCompleted WHERE id=@id AND taskId=@taskId",
         P("@title", title), P("@isCompleted", isCompleted), P("@id", subTaskId), P("@taskId", id));
-    await AddTaskHistoryAsync(conn, id, user, "subtask.updated", current.Title, title, $"Updated subtask {title}");
+    await AddTaskHistoryAsync(conn, id, user, "subtask.updated", current.Title, title, $"Cập nhật công việc con {title}");
     return Results.Ok(new SubTaskClientDto(subTaskId, title, isCompleted));
 }).RequireAuthorization();
 
@@ -203,7 +203,7 @@ app.MapPut("/api/tasks/{id}/subtasks/{subTaskId}/toggle", async (string id, stri
     if (IsViewer(user)) return Results.Forbid();
     await using var conn = await db.OpenAsync();
     await ExecuteAsync(conn, "UPDATE SubTasks SET isCompleted = CASE WHEN isCompleted=1 THEN 0 ELSE 1 END WHERE id=@id AND taskId=@taskId", P("@id", subTaskId), P("@taskId", id));
-    await AddTaskHistoryAsync(conn, id, user, "subtask.toggled", null, subTaskId, $"Toggled subtask {subTaskId}");
+    await AddTaskHistoryAsync(conn, id, user, "subtask.toggled", null, subTaskId, $"Đổi trạng thái công việc con {subTaskId}");
     return Results.Ok();
 }).RequireAuthorization();
 
@@ -213,7 +213,7 @@ app.MapDelete("/api/tasks/{id}/subtasks/{subTaskId}", async (string id, string s
     if (!IsManager(user)) return Results.Forbid();
     await using var conn = await db.OpenAsync();
     await ExecuteAsync(conn, "DELETE FROM SubTasks WHERE id=@id AND taskId=@taskId", P("@id", subTaskId), P("@taskId", id));
-    await AddTaskHistoryAsync(conn, id, user, "subtask.deleted", subTaskId, null, $"Deleted subtask {subTaskId}");
+    await AddTaskHistoryAsync(conn, id, user, "subtask.deleted", subTaskId, null, $"Xóa công việc con {subTaskId}");
     return Results.Ok();
 }).RequireAuthorization();
 
@@ -230,13 +230,13 @@ app.MapPost("/api/tasks/{id}/worklogs", async (string id, WorkLogRequest request
         P("@description", request.Description), P("@createdAt", createdAt));
     await ExecuteAsync(conn, "UPDATE Tasks SET loggedHours = ISNULL(loggedHours,0) + @hours WHERE id=@taskId", P("@hours", request.Hours), P("@taskId", id));
     var task = await QuerySingleAsync<TaskRow>(conn, "SELECT * FROM Tasks WHERE id=@id", P("@id", id));
-    await AddTaskHistoryAsync(conn, id, user, "worklog.created", null, request.Hours.ToString("0.##"), $"Logged {request.Hours:0.##}h: {request.Description}");
+    await AddTaskHistoryAsync(conn, id, user, "worklog.created", null, request.Hours.ToString("0.##"), $"Log {request.Hours:0.##} giờ: {request.Description}");
     if (task is not null)
     {
         await PublishTaskEventAsync(httpClientFactory, new TaskEventRequest(
             "worklog.created",
-            "Worklog created",
-            $"{user.FullName} logged {request.Hours:0.##}h on \"{task.Title}\".",
+            "Đã ghi log thời gian",
+            $"{user.FullName} đã log {request.Hours:0.##} giờ cho \"{task.Title}\".",
             id,
             task.ProjectId,
             SplitIds(task.AssigneeId).Append(task.CreatorId).Distinct().ToList(),

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { type Task, type Project, type User, type UserCredential, type Notification, type PublishedEvent, type ActivityLog } from '../services/mockData';
 import { apiService } from '../services/api';
+import { displayText, displayTextList } from '../utils/text';
 
 export const useTaskStore = defineStore('taskStore', () => {
   const users = ref<User[]>([]);
@@ -21,6 +22,84 @@ export const useTaskStore = defineStore('taskStore', () => {
   const seenNotificationIds = new Set<string>();
 
   // Initialize data asynchronously from API service
+  function normalizeUser(user: User): User {
+    return {
+      ...user,
+      fullName: displayText(user.fullName),
+      role: displayText(user.role)
+    };
+  }
+
+  function normalizeProject(project: Project): Project {
+    return {
+      ...project,
+      name: displayText(project.name),
+      description: displayText(project.description),
+      statusText: displayText(project.statusText),
+      members: (project.members || []).map(normalizeUser)
+    };
+  }
+
+  function normalizeTask(task: Task): Task {
+    return {
+      ...task,
+      title: displayText(task.title),
+      description: displayText(task.description),
+      labels: displayTextList(task.labels),
+      comments: (task.comments || []).map(comment => ({
+        ...comment,
+        userName: displayText(comment.userName),
+        content: displayText(comment.content)
+      })),
+      workLogs: (task.workLogs || []).map(log => ({
+        ...log,
+        userName: displayText(log.userName),
+        description: displayText(log.description)
+      })),
+      subTasks: (task.subTasks || []).map(subTask => ({
+        ...subTask,
+        title: displayText(subTask.title)
+      }))
+    };
+  }
+
+  function normalizeNotification(notification: Notification): Notification {
+    return {
+      ...notification,
+      title: displayText(notification.title),
+      message: displayText(notification.message),
+      type: displayText(notification.type),
+      actorName: displayText(notification.actorName)
+    };
+  }
+
+  function normalizeActivityLog(log: ActivityLog): ActivityLog {
+    return {
+      ...log,
+      userName: displayText(log.userName),
+      action: displayText(log.action),
+      message: displayText(log.message)
+    };
+  }
+
+  function normalizeCredential(credential: UserCredential): UserCredential {
+    return {
+      ...credential,
+      fullName: displayText(credential.fullName),
+      role: displayText(credential.role)
+    };
+  }
+
+  function normalizeWorkspaceText() {
+    users.value = users.value.map(normalizeUser);
+    projects.value = projects.value.map(normalizeProject);
+    tasks.value = tasks.value.map(normalizeTask);
+    notifications.value = notifications.value.map(normalizeNotification);
+    activityLogs.value = activityLogs.value.map(normalizeActivityLog);
+    userCredentials.value = userCredentials.value.map(normalizeCredential);
+    if (currentUser.value?.id) currentUser.value = normalizeUser(currentUser.value);
+  }
+
   function normalizeTaskDefaults() {
     tasks.value.forEach(t => {
       if (!t.subTasks) t.subTasks = [];
@@ -78,6 +157,7 @@ export const useTaskStore = defineStore('taskStore', () => {
         return tasks.value;
       });
       normalizeTaskDefaults();
+      normalizeWorkspaceText();
     } catch (e) {
       console.error('Failed to refresh workspace APIs:', e);
     }
@@ -156,6 +236,7 @@ export const useTaskStore = defineStore('taskStore', () => {
     }
 
     normalizeTaskDefaults();
+    normalizeWorkspaceText();
   }
 
   // Periodic background check & data refresh (every 10 seconds)
@@ -166,7 +247,7 @@ export const useTaskStore = defineStore('taskStore', () => {
         await refreshWorkspaceApis();
         await refreshNotifications();
       }
-    }, 10000);
+    }, 30000);
   }
 
   async function loginAction(email: string, password: string) {
@@ -279,7 +360,7 @@ export const useTaskStore = defineStore('taskStore', () => {
       if (seenNotificationIds.has(notification.id)) return;
       seenNotificationIds.add(notification.id);
       if (shouldToastNew && !notification.isRead) {
-        triggerToast('notification', `${notification.title}: ${notification.message}`);
+        triggerToast('notification', `${displayText(notification.title)}: ${displayText(notification.message)}`);
       }
     });
   }
@@ -287,7 +368,7 @@ export const useTaskStore = defineStore('taskStore', () => {
   // API Call Actions for Tasks
   async function addTask(taskData: Omit<Task, 'id' | 'createdAt' | 'subTasks' | 'workLogs' | 'loggedHours'>) {
     try {
-      const newTask = await apiService.createTask(taskData);
+      const newTask = normalizeTask(await apiService.createTask(taskData));
       tasks.value.push(newTask);
       updateProjectProgressLocal(newTask.projectId);
 
@@ -309,7 +390,7 @@ export const useTaskStore = defineStore('taskStore', () => {
       if (task) {
         const oldStatus = task.status;
         if (oldStatus !== status) {
-          const updatedTask = await apiService.updateTaskStatus(taskId, status);
+          const updatedTask = normalizeTask(await apiService.updateTaskStatus(taskId, status));
           task.status = updatedTask.status;
           updateProjectProgressLocal(task.projectId);
           
@@ -330,7 +411,7 @@ export const useTaskStore = defineStore('taskStore', () => {
         const oldStatus = oldTask.status;
         const oldAssigneeId = oldTask.assigneeId;
 
-        const savedTask = await apiService.updateTask(updatedTask);
+        const savedTask = normalizeTask(await apiService.updateTask(updatedTask));
         tasks.value[index] = { ...savedTask };
         
         updateProjectProgressLocal(savedTask.projectId);
@@ -387,7 +468,11 @@ export const useTaskStore = defineStore('taskStore', () => {
     const task = tasks.value.find(t => t.id === taskId);
     if (!task) return;
 
-    task.comments = await apiService.getComments(taskId);
+    task.comments = (await apiService.getComments(taskId)).map(comment => ({
+      ...comment,
+      userName: displayText(comment.userName),
+      content: displayText(comment.content)
+    }));
   }
 
   async function addComment(taskId: string, content: string) {
@@ -432,7 +517,7 @@ export const useTaskStore = defineStore('taskStore', () => {
 
   async function refreshNotifications(status: 'all' | 'unread' | 'read' = 'all') {
     try {
-      const items = await apiService.getNotifications(status);
+      const items = (await apiService.getNotifications(status)).map(normalizeNotification);
       syncNotificationToasts(items, notifications.value.length > 0);
       notifications.value = items;
     } catch (error) {
@@ -442,7 +527,7 @@ export const useTaskStore = defineStore('taskStore', () => {
 
   async function markNotificationRead(notificationId: string) {
     try {
-      const updated = await apiService.markNotificationRead(notificationId);
+      const updated = normalizeNotification(await apiService.markNotificationRead(notificationId));
       const index = notifications.value.findIndex(n => n.id === notificationId);
       if (index !== -1) {
         notifications.value[index] = updated;
@@ -472,7 +557,7 @@ export const useTaskStore = defineStore('taskStore', () => {
 
   async function refreshActivityLogs(taskId?: string) {
     try {
-      activityLogs.value = await apiService.getActivityLogs(taskId);
+      activityLogs.value = (await apiService.getActivityLogs(taskId)).map(normalizeActivityLog);
     } catch (error) {
       console.error('Failed to refresh activity logs:', error);
       activityLogs.value = [];
@@ -490,10 +575,11 @@ export const useTaskStore = defineStore('taskStore', () => {
         taskId: null,
         projectId: null
       });
-      notifications.value = [notification, ...notifications.value];
+      const cleanNotification = normalizeNotification(notification);
+      notifications.value = [cleanNotification, ...notifications.value];
       seenNotificationIds.add(notification.id);
-      triggerToast('notification.manual', `${notification.title}: ${notification.message}`);
-      return notification;
+      triggerToast('notification.manual', `${cleanNotification.title}: ${cleanNotification.message}`);
+      return cleanNotification;
     } catch (error) {
       console.error('Failed to create notification:', error);
       throw error;
@@ -503,7 +589,7 @@ export const useTaskStore = defineStore('taskStore', () => {
   async function updateProfile(data: { fullName: string; avatarUrl?: string }) {
     try {
       const result = await apiService.updateCurrentUser(data);
-      const updated = result.user;
+      const updated = normalizeUser(result.user);
       localStorage.setItem('token', result.token);
       currentUser.value = updated;
       const index = users.value.findIndex(user => user.id === updated.id);
@@ -529,7 +615,7 @@ export const useTaskStore = defineStore('taskStore', () => {
   // Projects
   async function addProject(projData: Omit<Project, 'id' | 'createdAt' | 'progress'>) {
     try {
-      const newProj = await apiService.createProject(projData);
+      const newProj = normalizeProject(await apiService.createProject(projData));
       projects.value.push(newProj);
       return newProj;
     } catch (error) {
@@ -558,22 +644,49 @@ export const useTaskStore = defineStore('taskStore', () => {
 
   async function updateUserRole(userId: string, role: string) {
     try {
-      await apiService.updateUserRole(userId, role);
+      const updated = normalizeUser(await apiService.updateUserRole(userId, role));
       const u = users.value.find(user => user.id === userId);
       if (u) {
-        u.role = role;
+        Object.assign(u, updated);
       }
       if (currentUser.value.id === userId) {
-        currentUser.value.role = role;
+        currentUser.value = updated;
       }
     } catch (error) {
       console.error('Failed to update user role:', error);
     }
   }
 
+  async function updateUserProfileByAdmin(userId: string, data: Partial<Pick<User, 'fullName' | 'email' | 'avatarUrl' | 'role' | 'isOnline'>>) {
+    try {
+      const updated = normalizeUser(await apiService.updateUserProfileByAdmin(userId, data));
+      const index = users.value.findIndex(user => user.id === userId);
+      if (index !== -1) users.value[index] = updated;
+      if (currentUser.value.id === userId) currentUser.value = updated;
+
+      projects.value = projects.value.map(project => ({
+        ...project,
+        members: (project.members || []).map(member => member.id === userId ? { ...member, ...updated } : member)
+      }));
+
+      const credential = userCredentials.value.find(item => item.id === userId);
+      if (credential) {
+        credential.fullName = updated.fullName;
+        credential.email = updated.email || credential.email;
+        credential.role = updated.role;
+      }
+
+      triggerToast('user.profile.updated', `Đã cập nhật hồ sơ ${updated.fullName}.`);
+      return updated;
+    } catch (error) {
+      console.error('Failed to update user profile:', error);
+      throw error;
+    }
+  }
+
   async function refreshUserCredentials() {
     try {
-      userCredentials.value = await apiService.getUserCredentials();
+      userCredentials.value = (await apiService.getUserCredentials()).map(normalizeCredential);
     } catch (error) {
       console.error('Failed to load user credentials:', error);
       userCredentials.value = users.value.map(user => ({
@@ -687,6 +800,7 @@ export const useTaskStore = defineStore('taskStore', () => {
     addProject,
     updateProjectMembers,
     updateUserRole,
+    updateUserProfileByAdmin,
     refreshUserCredentials,
     resetUserPassword,
     updateProfile,

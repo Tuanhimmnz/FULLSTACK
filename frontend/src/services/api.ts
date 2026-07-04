@@ -427,6 +427,21 @@ export const apiService = {
     return response.data;
   },
 
+  async updateUserProfileByAdmin(userId: string, data: Partial<Pick<User, 'fullName' | 'email' | 'avatarUrl' | 'role' | 'isOnline'>>): Promise<User> {
+    if (USE_MOCK) {
+      const users = mockStorage.getUsers();
+      const u = users.find(user => user.id === userId);
+      if (u) {
+        Object.assign(u, data);
+        mockStorage.saveUsers(users);
+        return Promise.resolve(u);
+      }
+      return Promise.reject(new Error('User not found'));
+    }
+    const response = await apiClient.put<User>(`/users/${userId}`, data);
+    return response.data;
+  },
+
   async getUserCredentials(): Promise<UserCredential[]> {
     if (USE_MOCK) {
       return Promise.resolve(mockStorage.getUsers().map(user => ({

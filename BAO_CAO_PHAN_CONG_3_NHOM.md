@@ -124,7 +124,7 @@ Nhiệm vụ trọng tâm:
 
 ```text
 JWT Auth: login, register, profile, đổi mật khẩu, phân quyền.
-Admin User Management: danh sách user, role, tài khoản demo, reset mật khẩu.
+Admin User Management: danh sách user, tìm kiếm, phân trang, sửa hồ sơ, đổi role, tài khoản demo, reset mật khẩu.
 Comment: bình luận theo task, sửa/xóa, tag thành viên.
 Notification: tạo thông báo, xem danh sách, unread count, mark read, mark all read, delete.
 Activity Log: ghi lại thao tác đăng nhập, profile, comment, notification và event nhận từ nhóm 1/2.
@@ -138,7 +138,7 @@ Chức năng cần demo kỹ nhất:
 ```text
 Đăng nhập admin.
 Đăng ký user mới.
-Mở Admin để xem 20+ tài khoản demo và reset mật khẩu.
+Mở Admin để xem 20+ tài khoản demo, tìm kiếm/phân trang, sửa hồ sơ user và reset mật khẩu.
 Mở Task Detail, thêm comment có @mention.
 Mở Thông báo, mark read, mark all read, delete.
 Mở Nhật ký để xem activity log tự động.
@@ -155,6 +155,7 @@ GET    /api/users/me
 PUT    /api/users/me
 PUT    /api/users/me/password
 GET    /api/users/credentials
+PUT    /api/users/{id}
 PUT    /api/users/{id}/role
 PUT    /api/users/{id}/password
 
@@ -213,7 +214,7 @@ Task Detail tick subtask, log giờ, comment được.
 Gantt có timeline.
 Analytics có workload và leaderboard.
 Wiki tạo tài liệu được.
-Admin quản lý tài khoản và đổi mật khẩu được.
+Admin quản lý tài khoản, phân trang danh sách, sửa hồ sơ và đổi mật khẩu được.
 Notifications mark read/delete được.
 Activity Log có dữ liệu.
 Diagnostics báo Gateway và 3 service OK.

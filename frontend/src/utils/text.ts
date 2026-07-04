@@ -48,10 +48,49 @@ const knownTranslations: Record<string, string> = {
   'Logged': 'Log thời gian'
 };
 
+const rawTextKeys = new Set([
+  'id',
+  'email',
+  'token',
+  'password',
+  'avatarUrl',
+  'userAvatar',
+  'createdAt',
+  'updatedAt',
+  'dueDate',
+  'startDate',
+  'endDate',
+  'color',
+  'status',
+  'priority',
+  'projectId',
+  'taskId',
+  'userId',
+  'actorId',
+  'creatorId',
+  'assigneeId',
+  'entityId'
+]);
+
 function toWindows1252Byte(char: string) {
   if (windows1252Bytes[char] !== undefined) return windows1252Bytes[char];
   const code = char.charCodeAt(0);
   return code <= 0xff ? code : undefined;
+}
+
+function repairLossyVietnamese(text: string) {
+  return text
+    .replace(/Ä�/g, 'Đ')
+    .replace(/Ä/g, 'Đ')
+    .replace(/Ä‘/g, 'đ')
+    .replace(/á»�/g, 'ọ')
+    .replace(/á»/g, 'ọ')
+    .replace(/gá»�i/g, 'gọi')
+    .replace(/gá»�/g, 'gọ')
+    .replace(/\bÄang\b/g, 'Đang')
+    .replace(/\bÄang/g, 'Đang')
+    .replace(/\bvÃ(?=\s|$|[,.!?:;])/g, 'và')
+    .replace(/\bgÃ(?=\s|$|[,.!?:;])/g, 'gì');
 }
 
 function repairToken(token: string) {
@@ -88,13 +127,32 @@ function translateKnownText(text: string) {
 
 export function displayText(value?: string | null) {
   if (value === null || value === undefined) return '';
-  const text = String(value);
+  const text = repairLossyVietnamese(String(value));
   if (!suspiciousMojibake.test(text)) return translateKnownText(text);
 
-  const repaired = text.replace(tokenPattern, repairToken);
+  const repaired = repairLossyVietnamese(text.replace(tokenPattern, repairToken));
   return translateKnownText(repaired);
 }
 
 export function displayTextList(values?: string[] | null) {
   return (values || []).map(displayText).filter(Boolean);
+}
+
+export function repairApiText<T>(value: T, key = ''): T {
+  if (typeof value === 'string') {
+    return (rawTextKeys.has(key) ? value : displayText(value)) as T;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => repairApiText(item, key)) as T;
+  }
+
+  if (value && typeof value === 'object') {
+    return Object.entries(value as Record<string, unknown>).reduce<Record<string, unknown>>((result, [childKey, childValue]) => {
+      result[childKey] = repairApiText(childValue, childKey);
+      return result;
+    }, {}) as T;
+  }
+
+  return value;
 }

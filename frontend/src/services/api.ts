@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { mockStorage, type User, type UserCredential, type Project, type Task, type Comment, type SubTask, type WorkLog, type Notification, type ActivityLog } from './mockData';
+import { repairApiText } from '../utils/text';
 
 const browserHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
 export const apiBaseUrl = import.meta.env.VITE_API_BASE_URL || `http://${browserHost}:7000/api`;
@@ -20,6 +21,14 @@ apiClient.interceptors.request.use((config) => {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
+}, (error) => {
+  return Promise.reject(error);
+});
+
+// Chuẩn hóa dữ liệu chữ tiếng Việt trả về từ API trước khi đưa vào store/component.
+apiClient.interceptors.response.use((response) => {
+  response.data = repairApiText(response.data);
+  return response;
 }, (error) => {
   return Promise.reject(error);
 });

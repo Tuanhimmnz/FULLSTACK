@@ -77,6 +77,12 @@ function translateKnownText(text: string) {
   Object.entries(knownTranslations).forEach(([from, to]) => {
     result = result.replaceAll(from, to);
   });
+  result = result.replace(/(.+?) logged ([0-9.]+)h on "([^"]+)"/g, '$1 đã log $2 giờ cho "$3"');
+  result = result.replace(/(.+?) assigned task "([^"]+)"/g, '$1 đã giao công việc "$2"');
+  result = result.replace(/(.+?) created project ([^.]+)\./g, '$1 đã tạo dự án $2.');
+  result = result.replace(/(.+?) updated project members\./g, '$1 đã cập nhật thành viên dự án.');
+  result = result.replace(/(.+?) created sprint ([^.]+)\./g, '$1 đã tạo sprint $2.');
+  result = result.replace(/(.+?) completed milestone ([^.]+)\./g, '$1 đã hoàn thành milestone $2.');
   return result;
 }
 

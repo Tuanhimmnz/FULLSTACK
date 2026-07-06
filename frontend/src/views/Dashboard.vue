@@ -331,7 +331,7 @@ function openTaskDetails(taskId: string) {
         </div>
       </section>
 
-      <section class="grid gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
+      <section class="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_24rem]">
         <div class="rounded-[1.6rem] border border-slate-200 bg-white p-5 shadow-sm">
           <div class="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
             <div>

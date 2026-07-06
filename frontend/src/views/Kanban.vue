@@ -21,6 +21,9 @@ const dragOverColumn = ref<Task['status'] | null>(null);
 const isCreateModalOpen = ref(false);
 const isDetailModalOpen = ref(false);
 const activeTaskId = ref<string | undefined>(undefined);
+const kanbanTopScroll = ref<HTMLElement | null>(null);
+const kanbanBoardScroll = ref<HTMLElement | null>(null);
+const syncingScroll = ref(false);
 
 const columns = [
   { status: 'Backlog' as const, name: 'Tích lũy', dot: 'bg-rose-400', panel: 'bg-rose-50/50' },
@@ -97,6 +100,19 @@ function openTaskDetails(taskId: string) {
 
 function focusTask(taskId: string) {
   activeTaskId.value = taskId;
+}
+
+function syncKanbanScroll(source: 'top' | 'board') {
+  if (syncingScroll.value) return;
+  const from = source === 'top' ? kanbanTopScroll.value : kanbanBoardScroll.value;
+  const to = source === 'top' ? kanbanBoardScroll.value : kanbanTopScroll.value;
+  if (!from || !to) return;
+
+  syncingScroll.value = true;
+  to.scrollLeft = from.scrollLeft;
+  requestAnimationFrame(() => {
+    syncingScroll.value = false;
+  });
 }
 
 function exportBoard() {
@@ -219,7 +235,21 @@ function exportBoard() {
     </div>
 
     <main class="grid gap-5 px-4 py-5 xl:grid-cols-[minmax(0,1fr)_22rem] lg:px-8">
-      <section class="overflow-x-auto pb-3">
+      <div class="min-w-0 space-y-3">
+        <div
+          ref="kanbanTopScroll"
+          class="overflow-x-auto rounded-2xl border border-slate-200 bg-white px-2 py-2 shadow-sm"
+          aria-label="Cuộn ngang bảng Kanban"
+          @scroll="syncKanbanScroll('top')"
+        >
+          <div class="h-2 min-w-[84rem] rounded-full bg-slate-100"></div>
+        </div>
+
+      <section
+        ref="kanbanBoardScroll"
+        class="overflow-x-auto pb-3"
+        @scroll="syncKanbanScroll('board')"
+      >
         <div class="grid min-w-[84rem] grid-cols-5 gap-4">
           <div
             v-for="col in columns"
@@ -274,6 +304,7 @@ function exportBoard() {
           </div>
         </div>
       </section>
+      </div>
 
       <aside class="hidden xl:block">
         <div class="sticky top-28 rounded-[1.4rem] border border-slate-200 bg-white p-5 shadow-xl shadow-slate-200/60">

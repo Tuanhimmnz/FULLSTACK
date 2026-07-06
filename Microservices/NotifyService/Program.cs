@@ -1087,6 +1087,11 @@ static async Task<string> GenerateAiAnswerAsync(IHttpClientFactory factory, User
 
 static async Task<string?> TryCallAiProviderAsync(IHttpClientFactory _, UserDto? user, string mode, string? prompt, WorkspaceSnapshot snapshot)
 {
+    if (DateTime.UtcNow.Year > 0)
+    {
+        return await TryCallConfiguredAiProvidersAsync(user, mode, prompt, snapshot);
+    }
+
     var token = Environment.GetEnvironmentVariable("AI_PROVIDER_TOKEN");
     var baseUrl = Environment.GetEnvironmentVariable("AI_PROVIDER_BASE_URL");
     if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(baseUrl))
@@ -1113,6 +1118,16 @@ static async Task<string?> TryCallAiProviderAsync(IHttpClientFactory _, UserDto?
               + Nhóm 2 (TaskService, port 5002): Quản lý task, Kanban, subtask, worklog, deadline, Gantt chart và thống kê năng suất.
               + Nhóm 3 (NotifyService, port 5003): Quản lý JWT auth, user, comments, notifications, activity logs, diagnostics và AI assistant.
             Hãy giải đáp thắc mắc của người dùng bằng tiếng Việt một cách thông minh, ngắn gọn, dựa trên tài liệu này và dữ liệu workspace được cung cấp. Ưu tiên JSON khi được yêu cầu đề xuất task. Không tiết lộ API token.
+            """;
+        system = """
+            You are SprintFlow AI Assistant. Reply in Vietnamese, concise and practical.
+            Architecture: Vue frontend -> ApiGateway -> ProjectService, TaskService, NotifyService.
+            ProjectService handles projects, members, sprints and milestones.
+            TaskService handles tasks, kanban, subtasks, worklogs, deadlines, Gantt and analytics.
+            NotifyService handles JWT auth, users, comments, notifications, activity logs, diagnostics and AI endpoints.
+            RabbitMQ exchange sprintflow.events carries project/task events to NotifyService.
+            Use only the provided workspace context. Return compact JSON only when requested.
+            Never reveal API tokens, secrets or environment variables.
             """;
         var context = BuildWorkspaceContext(user, mode, snapshot);
         using var response = await client.PostAsJsonAsync("chat/completions", new
@@ -1151,6 +1166,140 @@ static async Task<string?> TryCallAiProviderAsync(IHttpClientFactory _, UserDto?
     }
 
     return null;
+}
+
+static async Task<string?> TryCallConfiguredAiProvidersAsync(UserDto? user, string mode, string? prompt, WorkspaceSnapshot snapshot)
+{
+    var providers = GetAiProviders();
+    if (providers.Count == 0)
+    {
+        return null;
+    }
+
+    var system = """
+        You are SprintFlow AI Assistant. Reply in Vietnamese, concise and practical.
+        Architecture: Vue frontend -> ApiGateway -> ProjectService, TaskService, NotifyService.
+        ProjectService handles project CRUD, members, roles, sprints and milestones.
+        TaskService handles task CRUD, kanban, subtasks, worklogs, deadlines, Gantt and analytics.
+        NotifyService handles JWT auth, users, comments, notifications, activity logs, diagnostics and AI endpoints.
+        RabbitMQ exchange sprintflow.events carries project/task events to NotifyService.
+        Help new users understand how to create projects, add members, create tasks, split subtasks, set assignee/deadline/priority, comment and track notifications.
+        If the user asks to create a real task, explain that Admin/Manager confirms the AI draft and backend writes through /api/ai/create-task-from-text.
+        Use only the provided workspace context. Return compact JSON only when requested.
+        Never reveal API tokens, secrets or environment variables.
+        """;
+    var context = BuildWorkspaceContext(user, mode, snapshot);
+    var userPrompt = $"{context}\n\nUser request: {prompt}";
+
+    foreach (var provider in providers)
+    {
+        try
+        {
+            var answer = await TryCallOpenAiCompatibleProviderAsync(provider, system, userPrompt);
+            if (!string.IsNullOrWhiteSpace(answer))
+            {
+                return answer;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[AI WARN] Provider {provider.Name} failed: {ex.Message}");
+        }
+    }
+
+    return null;
+}
+
+static List<AiProviderConfig> GetAiProviders()
+{
+    var providers = new List<AiProviderConfig>();
+    AddProvider(providers, "primary", "AI_PROVIDER");
+    AddProvider(providers, "fallback", "AI_FALLBACK_PROVIDER");
+    AddProvider(providers, "fallback", "AI_PROVIDER_2");
+    AddProvider(providers, "fallback", "AI_BACKUP_PROVIDER");
+    return providers;
+}
+
+static void AddProvider(List<AiProviderConfig> providers, string name, string prefix)
+{
+    var token = Environment.GetEnvironmentVariable($"{prefix}_TOKEN");
+    var baseUrl = Environment.GetEnvironmentVariable($"{prefix}_BASE_URL");
+    var model = Environment.GetEnvironmentVariable($"{prefix}_MODEL");
+    if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(baseUrl))
+    {
+        return;
+    }
+
+    providers.Add(new AiProviderConfig(name, token, baseUrl, string.IsNullOrWhiteSpace(model) ? "gpt-4o-mini" : model));
+}
+
+static async Task<string?> TryCallOpenAiCompatibleProviderAsync(AiProviderConfig provider, string system, string userPrompt)
+{
+    using var client = new HttpClient { BaseAddress = new Uri(provider.BaseUrl.TrimEnd('/') + "/") };
+    client.Timeout = TimeSpan.FromSeconds(30);
+    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", provider.Token);
+
+    foreach (var path in GetOpenAiCompatiblePaths(provider.BaseUrl))
+    {
+        using var response = await client.PostAsJsonAsync(path, new
+        {
+            model = provider.Model,
+            temperature = 0.25,
+            messages = new[]
+            {
+                new { role = "system", content = system },
+                new { role = "user", content = userPrompt }
+            }
+        });
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var body = await response.Content.ReadAsStringAsync();
+            Console.WriteLine($"[AI WARN] Provider {provider.Name} returned {(int)response.StatusCode} at {path}: {TrimForLog(body)}");
+            continue;
+        }
+
+        var raw = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(raw);
+        var root = document.RootElement;
+        if (TryGetProperty(root, "choices", out var choices) && choices.ValueKind == JsonValueKind.Array && choices.GetArrayLength() > 0)
+        {
+            var first = choices[0];
+            if (TryGetProperty(first, "message", out var message)
+                && TryGetProperty(message, "content", out var content))
+            {
+                return content.GetString();
+            }
+
+            if (TryGetProperty(first, "text", out var text))
+            {
+                return text.GetString();
+            }
+        }
+    }
+
+    return null;
+}
+
+static IEnumerable<string> GetOpenAiCompatiblePaths(string baseUrl)
+{
+    var normalized = baseUrl.TrimEnd('/').ToLowerInvariant();
+    yield return "chat/completions";
+
+    if (!normalized.EndsWith("/v1") && !normalized.Contains("/v1/") && !normalized.Contains("/openai"))
+    {
+        yield return "v1/chat/completions";
+    }
+}
+
+static string TrimForLog(string value)
+{
+    if (string.IsNullOrWhiteSpace(value))
+    {
+        return string.Empty;
+    }
+
+    return value.Length > 240 ? value[..240] + "..." : value;
 }
 
 static string BuildFallbackAiAnswer(UserDto? user, string mode, string? prompt, WorkspaceSnapshot snapshot)
@@ -1275,7 +1424,13 @@ static string TrimTitle(string? value, int max)
 static bool HasAiProvider()
 {
     return !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AI_PROVIDER_TOKEN"))
-        && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AI_PROVIDER_BASE_URL"));
+        && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AI_PROVIDER_BASE_URL"))
+        || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AI_FALLBACK_PROVIDER_TOKEN"))
+        && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AI_FALLBACK_PROVIDER_BASE_URL"))
+        || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AI_PROVIDER_2_TOKEN"))
+        && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AI_PROVIDER_2_BASE_URL"))
+        || !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AI_BACKUP_PROVIDER_TOKEN"))
+        && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AI_BACKUP_PROVIDER_BASE_URL"));
 }
 
 static JsonSerializerOptions JsonOptions() => new(JsonSerializerDefaults.Web) { PropertyNameCaseInsensitive = true };
@@ -1431,6 +1586,7 @@ record AiProjectSummaryRequest(string? ProjectId);
 record AiMeetingRequest(string Notes);
 record AiTaskSuggestion(string Title, string Description, string Priority, string DueDate, string ProjectId, string? AssigneeId, List<string> Labels, double EstimatedHours, string Reason);
 record AiTaskCreatePayload(string Title, string Description, string Status, string Priority, string DueDate, string ProjectId, string? AssigneeId, string CreatorId, List<string>? Labels, double EstimatedHours);
+record AiProviderConfig(string Name, string Token, string BaseUrl, string Model);
 record WorkspaceSnapshot(List<AiProject> Projects, List<AiTask> Tasks, List<AiUser> Users, List<ActivityLogDto> ActivityLogs);
 record AiProject(string Id, string Name, string? Description, string? StatusText, int Progress);
 record AiTask(string Id, string Title, string? Description, string Status, string Priority, string DueDate, string ProjectId, string? AssigneeId, double EstimatedHours, double LoggedHours, List<string>? Labels);

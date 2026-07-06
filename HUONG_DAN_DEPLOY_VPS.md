@@ -122,6 +122,11 @@ RABBITMQ_QUEUE=notify.events
 AI_PROVIDER_TOKEN=
 AI_PROVIDER_BASE_URL=
 AI_PROVIDER_MODEL=
+
+# Provider phu OpenAI-compatible, dung khi Gemini/provider chinh bi rate limit.
+AI_FALLBACK_PROVIDER_TOKEN=
+AI_FALLBACK_PROVIDER_BASE_URL=
+AI_FALLBACK_PROVIDER_MODEL=
 ```
 
 Luu y bao mat:
@@ -129,8 +134,19 @@ Luu y bao mat:
 ```text
 Khong dua token AI vao frontend Vue.
 Frontend chi goi /api/ai/* qua Gateway.
-NotifyService doc AI_PROVIDER_TOKEN tu env. Neu chua co token, service dung fallback demo.
+NotifyService doc token tu env. Khong co token thi dung fallback demo bang data that.
+Neu co provider chinh va phu, backend thu provider chinh truoc, gap 429/loi thi tu chuyen sang provider phu.
 ```
+
+Vi du cau hinh provider phu:
+
+```bash
+AI_FALLBACK_PROVIDER_BASE_URL=https://api.example.com
+AI_FALLBACK_PROVIDER_MODEL=gpt-4
+AI_FALLBACK_PROVIDER_TOKEN=<dat-token-tren-vps-khong-commit-git>
+```
+
+Neu base URL chi la domain goc, backend se tu thu ca `/chat/completions` va `/v1/chat/completions`.
 
 Test nhanh sau deploy:
 

@@ -1125,7 +1125,12 @@ static async Task<string?> TryCallAiProviderAsync(IHttpClientFactory _, UserDto?
                 new { role = "user", content = $"{context}\n\nYêu cầu: {prompt}" }
             }
         });
-        if (!response.IsSuccessStatusCode) return null;
+        if (!response.IsSuccessStatusCode)
+        {
+            var errBody = await response.Content.ReadAsStringAsync();
+            Console.WriteLine($"[AI ERROR] Gemini API returned status {(int)response.StatusCode}. Response: {errBody}");
+            return null;
+        }
 
         var raw = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(raw);

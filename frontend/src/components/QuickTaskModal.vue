@@ -320,6 +320,7 @@ function handleButtonClick(event: MouseEvent) {
 const props = defineProps<{
   isOpen: boolean;
   preselectedProjectId?: string;
+  defaultStatus?: 'Backlog' | 'ToDo' | 'InProgress' | 'Review' | 'Done';
 }>();
 
 const emit = defineEmits<{
@@ -424,7 +425,7 @@ function submitForm() {
     assigneeId: selectedAssigneeIds.value.length > 0 ? selectedAssigneeIds.value.join(',') : undefined,
     priority: priority.value,
     dueDate: dueDate.value,
-    status: 'ToDo', // New tasks default to ToDo
+    status: props.defaultStatus || 'ToDo',
     creatorId: taskStore.currentUser.id,
     estimatedHours: estimatedHours.value || 0,
     labels: selectedLabels.value

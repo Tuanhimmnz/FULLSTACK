@@ -39,7 +39,7 @@ const navItems = computed<NavItem[]>(() => {
     { name: 'Tổng quan', path: '/dashboard', icon: LayoutDashboard, accent: 'text-cyan-600' },
     { name: 'Dự án', path: '/projects', icon: FolderKanban, accent: 'text-orange-600' },
     { name: 'Kanban', path: '/kanban', icon: Kanban, accent: 'text-blue-600' },
-    { name: 'Danh sách task', path: '/tasks', icon: ListTodo, accent: 'text-indigo-600' },
+    { name: 'My Task', path: '/tasks', icon: ListTodo, accent: 'text-indigo-600' },
     { name: 'Tiến độ (Gantt)', path: '/gantt', icon: CalendarRange, accent: 'text-emerald-600' },
     { name: 'Thống kê', path: '/analytics', icon: BarChart3, accent: 'text-violet-600' },
     { name: 'Tài liệu', path: '/wiki', icon: FileText, accent: 'text-blue-600' },

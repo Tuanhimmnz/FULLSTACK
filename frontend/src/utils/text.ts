@@ -28,7 +28,12 @@ const windows1252Bytes: Record<string, number> = {
   'Ÿ': 0x9f
 };
 
-const suspiciousMojibake = /(?:Ã|Ä|Æ|á[º»])/;
+const cp1258MojibakeBytes: Record<string, number> = {
+  'Ă': 0xc3,
+  'ă': 0xe3
+};
+
+const suspiciousMojibake = /(?:Ã|Ă|ă|Ä|Æ|Â|á[º»])/;
 const tokenPattern = /[A-Za-z0-9_'".,:;!?()[\]{}+\-=@#%&*|/\\\u00a0-\u00ff\u0152-\u0178\u0192\u02c6\u02dc\u2018-\u201e\u2020-\u2026\u2030\u2039\u203a]+/g;
 
 const knownTranslations: Record<string, string> = {
@@ -73,6 +78,7 @@ const rawTextKeys = new Set([
 ]);
 
 function toWindows1252Byte(char: string) {
+  if (cp1258MojibakeBytes[char] !== undefined) return cp1258MojibakeBytes[char];
   if (windows1252Bytes[char] !== undefined) return windows1252Bytes[char];
   const code = char.charCodeAt(0);
   return code <= 0xff ? code : undefined;
@@ -90,7 +96,9 @@ function repairLossyVietnamese(text: string) {
     .replace(/\bÄang\b/g, 'Đang')
     .replace(/\bÄang/g, 'Đang')
     .replace(/\bvÃ(?=\s|$|[,.!?:;])/g, 'và')
-    .replace(/\bgÃ(?=\s|$|[,.!?:;])/g, 'gì');
+    .replace(/\bvĂ(?=\s|$|[,.!?:;])/g, 'và')
+    .replace(/\bgÃ(?=\s|$|[,.!?:;])/g, 'gì')
+    .replace(/\bgĂ(?=\s|$|[,.!?:;])/g, 'gì');
 }
 
 function repairToken(token: string) {

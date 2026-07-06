@@ -52,7 +52,7 @@ const routes: Array<RouteRecordRaw> = [
     path: '/tasks',
     name: 'Tasks',
     component: () => import('../views/TasksList.vue'),
-    meta: { title: 'Danh sách công việc - SprintFlow', requiresAuth: true }
+    meta: { title: 'My Task - SprintFlow', requiresAuth: true }
   },
   {
     path: '/gantt',

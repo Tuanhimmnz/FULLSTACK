@@ -1,4 +1,5 @@
 using System.Data;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text;
@@ -309,6 +310,11 @@ static async Task<List<string>> GetProjectRecipientIdsAsync(SqlConnection conn, 
 
 static async Task PublishProjectEventAsync(IHttpClientFactory factory, ProjectEventRequest request)
 {
+    if (await TryPublishBrokerEventAsync("ProjectService", request.Type, "project", request))
+    {
+        return;
+    }
+
     try
     {
         await factory.CreateClient("notify").PostAsJsonAsync("/api/internal/project-events", request);
@@ -317,6 +323,52 @@ static async Task PublishProjectEventAsync(IHttpClientFactory factory, ProjectEv
     {
         // Project service remains available if Notify service is temporarily down.
     }
+}
+
+static async Task<bool> TryPublishBrokerEventAsync(string sourceService, string routingKey, string eventKind, object data)
+{
+    if (!IsRabbitMqEnabled()) return false;
+
+    try
+    {
+        var options = RabbitMqOptions.FromEnvironment();
+        using var client = new HttpClient { BaseAddress = new Uri(options.ManagementUrl.TrimEnd('/') + "/") };
+        var auth = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{options.User}:{options.Password}"));
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", auth);
+
+        var envelope = JsonSerializer.Serialize(new BrokerEventEnvelope(
+            sourceService,
+            eventKind,
+            data,
+            DateTimeOffset.UtcNow.ToString("O")));
+        var body = JsonSerializer.Serialize(new
+        {
+            properties = new { content_type = "application/json" },
+            routing_key = routingKey,
+            payload = envelope,
+            payload_encoding = "string"
+        });
+
+        using var response = await client.PostAsync(
+            $"api/exchanges/%2f/{Uri.EscapeDataString(options.Exchange)}/publish",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+        if (!response.IsSuccessStatusCode) return false;
+
+        var result = await response.Content.ReadFromJsonAsync<RabbitPublishResponse>();
+        return result?.Routed == true;
+    }
+    catch
+    {
+        return false;
+    }
+}
+
+static bool IsRabbitMqEnabled()
+{
+    var value = Environment.GetEnvironmentVariable("RABBITMQ_ENABLED")
+        ?? Environment.GetEnvironmentVariable("RabbitMQ__Enabled");
+    return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(value, "1", StringComparison.OrdinalIgnoreCase);
 }
 
 static async Task EnsureSchemaAsync(SqlDb db)
@@ -542,3 +594,21 @@ record MilestoneDto(string Id, string ProjectId, string Name, string Description
 record ProjectActivityDto(string Id, string ProjectId, string? ActorId, string? ActorName, string Action, string Message, string CreatedAt);
 record EventActor(string Id, string FullName, string Role);
 record ProjectEventRequest(string Type, string Title, string Message, string? ProjectId, List<string> RecipientUserIds, EventActor? Actor);
+record BrokerEventEnvelope(string SourceService, string EventKind, object Data, string PublishedAt);
+record RabbitPublishResponse(bool Routed);
+record RabbitMqOptions(string ManagementUrl, string User, string Password, string Exchange)
+{
+    public static RabbitMqOptions FromEnvironment() => new(
+        Environment.GetEnvironmentVariable("RABBITMQ_MANAGEMENT_URL")
+            ?? Environment.GetEnvironmentVariable("RabbitMQ__ManagementUrl")
+            ?? "http://rabbitmq:15672",
+        Environment.GetEnvironmentVariable("RABBITMQ_USER")
+            ?? Environment.GetEnvironmentVariable("RabbitMQ__User")
+            ?? "guest",
+        Environment.GetEnvironmentVariable("RABBITMQ_PASSWORD")
+            ?? Environment.GetEnvironmentVariable("RabbitMQ__Password")
+            ?? "guest",
+        Environment.GetEnvironmentVariable("RABBITMQ_EXCHANGE")
+            ?? Environment.GetEnvironmentVariable("RabbitMQ__Exchange")
+            ?? "sprintflow.events");
+}

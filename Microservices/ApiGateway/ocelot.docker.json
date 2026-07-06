@@ -78,6 +78,20 @@
       "DownstreamHostAndPorts": [{ "Host": "notify-service", "Port": 5003 }]
     },
     {
+      "UpstreamPathTemplate": "/api/ai/{everything}",
+      "UpstreamHttpMethod": [ "GET", "POST", "PUT", "PATCH", "DELETE" ],
+      "DownstreamPathTemplate": "/api/ai/{everything}",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [{ "Host": "notify-service", "Port": 5003 }]
+    },
+    {
+      "UpstreamPathTemplate": "/api/ai",
+      "UpstreamHttpMethod": [ "GET", "POST" ],
+      "DownstreamPathTemplate": "/api/ai",
+      "DownstreamScheme": "http",
+      "DownstreamHostAndPorts": [{ "Host": "notify-service", "Port": 5003 }]
+    },
+    {
       "UpstreamPathTemplate": "/api/projects/{everything}",
       "UpstreamHttpMethod": [ "GET", "POST", "PUT", "PATCH", "DELETE" ],
       "DownstreamPathTemplate": "/api/projects/{everything}",

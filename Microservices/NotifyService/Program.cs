@@ -1,7 +1,10 @@
 using System.Data;
 using System.IdentityModel.Tokens.Jwt;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Data.SqlClient;
 using Microsoft.IdentityModel.Tokens;
@@ -48,6 +51,14 @@ var db = new SqlDb(app.Configuration.GetConnectionString("NotifyDb")!);
 await db.EnsureDatabaseAsync("NotifyDB");
 await EnsureSchemaAsync(db);
 await SeedUsersAsync(db);
+
+if (IsRabbitMqEnabled())
+{
+    app.Lifetime.ApplicationStarted.Register(() =>
+    {
+        _ = Task.Run(() => RunRabbitMqConsumerAsync(db, app.Logger, app.Lifetime.ApplicationStopping));
+    });
+}
 
 app.MapGet("/health", () => Results.Ok(new { service = "NotifyService", status = "ok" }));
 
@@ -351,25 +362,114 @@ app.MapPost("/api/notifications", async (NotificationCreateRequest request, Clai
 
 app.MapPost("/api/internal/task-events", async (TaskEventRequest request) =>
 {
-    await using var conn = await db.OpenAsync();
-    foreach (var userId in request.RecipientUserIds.Distinct().Where(id => !string.IsNullOrWhiteSpace(id)))
-    {
-        await InsertNotificationAsync(conn, userId, request.Title, request.Message, request.Type, request.TaskId, request.ProjectId, request.Actor);
-    }
-    await LogSystemAsync(conn, request.Actor, request.Type, "task-event", request.TaskId, request.TaskId, request.Message);
-    return Results.Accepted();
+    await ProcessTaskEventAsync(db, request);
+    return Results.Accepted(value: new { source = "internal-api", eventType = request.Type });
 });
 
 app.MapPost("/api/internal/project-events", async (ProjectEventRequest request) =>
 {
-    await using var conn = await db.OpenAsync();
-    foreach (var userId in request.RecipientUserIds.Distinct().Where(id => !string.IsNullOrWhiteSpace(id)))
-    {
-        await InsertNotificationAsync(conn, userId, request.Title, request.Message, request.Type, null, request.ProjectId, request.Actor);
-    }
-    await LogSystemAsync(conn, request.Actor, request.Type, "project-event", request.ProjectId, null, request.Message);
-    return Results.Accepted();
+    await ProcessProjectEventAsync(db, request);
+    return Results.Accepted(value: new { source = "internal-api", eventType = request.Type });
 });
+
+app.MapPost("/api/ai/landing-chat", async (AiChatRequest request, IHttpClientFactory httpClientFactory) =>
+{
+    var answer = await GenerateAiAnswerAsync(httpClientFactory, null, "landing", request.Message, new WorkspaceSnapshot([], [], [], []));
+    return Results.Ok(new AiChatResponse(answer, "landing-assistant", HasAiProvider(), new List<string>
+    {
+        "Mở F12 Network để thấy frontend chỉ gọi /api qua Gateway",
+        "Đăng nhập admin@projecthub.com / admin123 để xem dữ liệu demo",
+        "Backend gom ProjectService, TaskService, NotifyService va RabbitMQ"
+    }));
+});
+
+app.MapPost("/api/ai/chat", async (AiChatRequest request, ClaimsPrincipal principal, IHttpClientFactory httpClientFactory, HttpRequest httpRequest) =>
+{
+    var user = CurrentUser(principal);
+    if (user is null) return Results.Unauthorized();
+
+    var snapshot = await LoadWorkspaceSnapshotAsync(httpClientFactory, httpRequest);
+    var answer = await GenerateAiAnswerAsync(httpClientFactory, user, "chat", request.Message, snapshot);
+    return Results.Ok(new AiChatResponse(answer, "workspace-assistant", HasAiProvider(), BuildAiSuggestions(snapshot, user)));
+}).RequireAuthorization();
+
+app.MapPost("/api/ai/suggest-tasks", async (AiPromptRequest request, ClaimsPrincipal principal, IHttpClientFactory httpClientFactory, HttpRequest httpRequest) =>
+{
+    var user = CurrentUser(principal);
+    if (user is null) return Results.Unauthorized();
+
+    var snapshot = await LoadWorkspaceSnapshotAsync(httpClientFactory, httpRequest);
+    var suggestions = BuildTaskSuggestions(snapshot, user, request.Prompt);
+    var summary = await GenerateAiAnswerAsync(httpClientFactory, user, "suggest-tasks", request.Prompt ?? "De xuat task tiep theo", snapshot);
+    return Results.Ok(new { summary, suggestions, usedProvider = HasAiProvider() });
+}).RequireAuthorization();
+
+app.MapPost("/api/ai/create-task-from-text", async (AiCreateTaskRequest request, ClaimsPrincipal principal, IHttpClientFactory httpClientFactory, HttpRequest httpRequest) =>
+{
+    var user = CurrentUser(principal);
+    if (user is null) return Results.Unauthorized();
+    if (!IsManager(user)) return Results.Forbid();
+
+    var snapshot = await LoadWorkspaceSnapshotAsync(httpClientFactory, httpRequest);
+    var draft = BuildTaskDraft(snapshot, user, request);
+    if (!request.Confirm)
+    {
+        return Results.Ok(new AiCreateTaskResponse(false, null, draft, "AI đã lập bản nháp. Admin bấm xác nhận mới tạo task thật."));
+    }
+
+    var client = httpClientFactory.CreateClient("task");
+    using var message = new HttpRequestMessage(HttpMethod.Post, "/api/tasks")
+    {
+        Content = JsonContent.Create(new AiTaskCreatePayload(
+            draft.Title,
+            draft.Description,
+            "ToDo",
+            draft.Priority,
+            draft.DueDate,
+            draft.ProjectId,
+            draft.AssigneeId,
+            user.Id,
+            draft.Labels,
+            draft.EstimatedHours))
+    };
+    AttachAuthorization(message, httpRequest);
+    using var response = await client.SendAsync(message);
+    var raw = await response.Content.ReadAsStringAsync();
+    if (!response.IsSuccessStatusCode)
+    {
+        return Results.Problem($"TaskService không tạo được task: {(int)response.StatusCode} {raw}", statusCode: 502);
+    }
+
+    var createdTask = JsonSerializer.Deserialize<JsonElement>(raw, JsonOptions());
+    return Results.Ok(new AiCreateTaskResponse(true, createdTask, draft, "Đã tạo task thật qua Gateway -> TaskService. TaskService sẽ publish event sang NotifyService."));
+}).RequireAuthorization();
+
+app.MapPost("/api/ai/summarize-project", async (AiProjectSummaryRequest request, ClaimsPrincipal principal, IHttpClientFactory httpClientFactory, HttpRequest httpRequest) =>
+{
+    var user = CurrentUser(principal);
+    if (user is null) return Results.Unauthorized();
+
+    var snapshot = await LoadWorkspaceSnapshotAsync(httpClientFactory, httpRequest);
+    var scopedTasks = string.IsNullOrWhiteSpace(request.ProjectId)
+        ? snapshot.Tasks
+        : snapshot.Tasks.Where(task => task.ProjectId == request.ProjectId).ToList();
+    var done = scopedTasks.Count(task => task.Status == "Done");
+    var overdue = scopedTasks.Count(task => task.Status != "Done" && DateOnly.TryParse(task.DueDate, out var due) && due < DateOnly.FromDateTime(DateTime.Today));
+    var prompt = $"Tóm tắt project {request.ProjectId ?? "toàn bộ"}: {scopedTasks.Count} task, {done} hoàn thành, {overdue} quá hạn.";
+    var answer = await GenerateAiAnswerAsync(httpClientFactory, user, "summarize-project", prompt, snapshot);
+    return Results.Ok(new { answer, totalTasks = scopedTasks.Count, done, overdue, usedProvider = HasAiProvider() });
+}).RequireAuthorization();
+
+app.MapPost("/api/ai/meeting-to-tasks", async (AiMeetingRequest request, ClaimsPrincipal principal, IHttpClientFactory httpClientFactory, HttpRequest httpRequest) =>
+{
+    var user = CurrentUser(principal);
+    if (user is null) return Results.Unauthorized();
+
+    var snapshot = await LoadWorkspaceSnapshotAsync(httpClientFactory, httpRequest);
+    var suggestions = BuildMeetingTasks(snapshot, user, request.Notes);
+    var answer = await GenerateAiAnswerAsync(httpClientFactory, user, "meeting-to-tasks", request.Notes, snapshot);
+    return Results.Ok(new { answer, suggestions, usedProvider = HasAiProvider(), note = "Đây là đề xuất. Admin xác nhận từng task mới ghi vào TaskService." });
+}).RequireAuthorization();
 
 app.MapGet("/api/notifications/preferences", async (ClaimsPrincipal principal) =>
 {
@@ -445,7 +545,9 @@ app.MapGet("/api/diagnostics/routes", () => Results.Ok(new[]
     new RouteInfoDto("Auth/User", "/api/auth, /api/users", "NotifyService", "notify-service:5003", "Nhom 3"),
     new RouteInfoDto("Comment", "/api/tasks/{taskId}/comments", "NotifyService", "notify-service:5003", "Nhom 3"),
     new RouteInfoDto("Notification", "/api/notifications", "NotifyService", "notify-service:5003", "Nhom 3"),
-    new RouteInfoDto("Activity Log", "/api/activity-logs", "NotifyService", "notify-service:5003", "Nhom 3")
+    new RouteInfoDto("Activity Log", "/api/activity-logs", "NotifyService", "notify-service:5003", "Nhom 3"),
+    new RouteInfoDto("Event Broker", "RabbitMQ exchange sprintflow.events", "RabbitMQ", "rabbitmq:5672 / 15672", "Nhom 1+2+3"),
+    new RouteInfoDto("AI Assistant", "/api/ai/*", "NotifyService", "notify-service:5003", "Nhom 3")
 })).RequireAuthorization();
 
 app.MapGet("/api/diagnostics/services", async (IHttpClientFactory httpClientFactory) =>
@@ -459,6 +561,11 @@ app.MapGet("/api/diagnostics/services", async (IHttpClientFactory httpClientFact
         checkedAt = DateTimeOffset.UtcNow,
         services
     });
+}).RequireAuthorization();
+
+app.MapGet("/api/diagnostics/broker", async () =>
+{
+    return Results.Ok(await CheckRabbitMqAsync());
 }).RequireAuthorization();
 
 app.MapPatch("/api/notifications/mark-all-read", async (ClaimsPrincipal principal) =>
@@ -746,6 +853,400 @@ static async Task<NotificationPreferenceDto> GetOrCreatePreferencesAsync(SqlConn
     return new NotificationPreferenceDto(userId, true, false, true, true, true, true, now);
 }
 
+static async Task ProcessTaskEventAsync(SqlDb db, TaskEventRequest request)
+{
+    await using var conn = await db.OpenAsync();
+    foreach (var userId in request.RecipientUserIds.Distinct().Where(id => !string.IsNullOrWhiteSpace(id)))
+    {
+        await InsertNotificationAsync(conn, userId, request.Title, request.Message, request.Type, request.TaskId, request.ProjectId, request.Actor);
+    }
+    await LogSystemAsync(conn, request.Actor, request.Type, "task-event", request.TaskId, request.TaskId, request.Message);
+}
+
+static async Task ProcessProjectEventAsync(SqlDb db, ProjectEventRequest request)
+{
+    await using var conn = await db.OpenAsync();
+    foreach (var userId in request.RecipientUserIds.Distinct().Where(id => !string.IsNullOrWhiteSpace(id)))
+    {
+        await InsertNotificationAsync(conn, userId, request.Title, request.Message, request.Type, null, request.ProjectId, request.Actor);
+    }
+    await LogSystemAsync(conn, request.Actor, request.Type, "project-event", request.ProjectId, null, request.Message);
+}
+
+static async Task RunRabbitMqConsumerAsync(SqlDb db, ILogger logger, CancellationToken stoppingToken)
+{
+    try
+    {
+        await EnsureRabbitMqTopologyAsync(stoppingToken);
+        logger.LogInformation("RabbitMQ consumer started for NotifyService.");
+    }
+    catch (Exception ex)
+    {
+        logger.LogWarning(ex, "RabbitMQ topology is not ready. NotifyService will keep retrying.");
+    }
+
+    while (!stoppingToken.IsCancellationRequested)
+    {
+        try
+        {
+            await EnsureRabbitMqTopologyAsync(stoppingToken);
+            var messages = await FetchRabbitMqMessagesAsync(stoppingToken);
+            foreach (var message in messages)
+            {
+                await ProcessBrokerPayloadAsync(db, message.Payload);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "RabbitMQ consumer polling failed.");
+        }
+
+        try
+        {
+            await Task.Delay(TimeSpan.FromSeconds(4), stoppingToken);
+        }
+        catch (TaskCanceledException)
+        {
+            break;
+        }
+    }
+}
+
+static async Task EnsureRabbitMqTopologyAsync(CancellationToken cancellationToken = default)
+{
+    var options = RabbitMqOptions.FromEnvironment();
+    using var client = CreateRabbitMqClient(options);
+
+    using var exchangeResponse = await client.PutAsJsonAsync(
+        $"api/exchanges/%2f/{Uri.EscapeDataString(options.Exchange)}",
+        new { type = "topic", durable = true, auto_delete = false },
+        cancellationToken);
+    exchangeResponse.EnsureSuccessStatusCode();
+
+    using var queueResponse = await client.PutAsJsonAsync(
+        $"api/queues/%2f/{Uri.EscapeDataString(options.Queue)}",
+        new { durable = true, auto_delete = false },
+        cancellationToken);
+    queueResponse.EnsureSuccessStatusCode();
+
+    using var bindingResponse = await client.PostAsJsonAsync(
+        $"api/bindings/%2f/e/{Uri.EscapeDataString(options.Exchange)}/q/{Uri.EscapeDataString(options.Queue)}",
+        new { routing_key = "#" },
+        cancellationToken);
+    bindingResponse.EnsureSuccessStatusCode();
+}
+
+static async Task<List<RabbitGetMessage>> FetchRabbitMqMessagesAsync(CancellationToken cancellationToken = default)
+{
+    var options = RabbitMqOptions.FromEnvironment();
+    using var client = CreateRabbitMqClient(options);
+    using var response = await client.PostAsJsonAsync(
+        $"api/queues/%2f/{Uri.EscapeDataString(options.Queue)}/get",
+        new { count = 10, ackmode = "ack_requeue_false", encoding = "auto", truncate = 50000 },
+        cancellationToken);
+    response.EnsureSuccessStatusCode();
+    return await response.Content.ReadFromJsonAsync<List<RabbitGetMessage>>(JsonOptions(), cancellationToken) ?? [];
+}
+
+static async Task ProcessBrokerPayloadAsync(SqlDb db, string payload)
+{
+    using var document = JsonDocument.Parse(payload);
+    var root = document.RootElement;
+    if (!TryGetProperty(root, "EventKind", out var kindElement) || !TryGetProperty(root, "Data", out var dataElement))
+    {
+        return;
+    }
+
+    var kind = kindElement.GetString();
+    if (string.Equals(kind, "task", StringComparison.OrdinalIgnoreCase))
+    {
+        var request = dataElement.Deserialize<TaskEventRequest>(JsonOptions());
+        if (request is not null) await ProcessTaskEventAsync(db, request);
+        return;
+    }
+
+    if (string.Equals(kind, "project", StringComparison.OrdinalIgnoreCase))
+    {
+        var request = dataElement.Deserialize<ProjectEventRequest>(JsonOptions());
+        if (request is not null) await ProcessProjectEventAsync(db, request);
+    }
+}
+
+static async Task<BrokerHealthDto> CheckRabbitMqAsync()
+{
+    if (!IsRabbitMqEnabled())
+    {
+        return new BrokerHealthDto("RabbitMQ", "disabled", false, "RABBITMQ_ENABLED is not true", null, null);
+    }
+
+    try
+    {
+        var options = RabbitMqOptions.FromEnvironment();
+        using var client = CreateRabbitMqClient(options);
+        using var response = await client.GetAsync($"api/queues/%2f/{Uri.EscapeDataString(options.Queue)}");
+        var ok = response.IsSuccessStatusCode;
+        return new BrokerHealthDto("RabbitMQ", ok ? "ok" : "error", ok, ok ? "Queue ready" : $"HTTP {(int)response.StatusCode}", options.Exchange, options.Queue);
+    }
+    catch (Exception ex)
+    {
+        return new BrokerHealthDto("RabbitMQ", "error", false, ex.Message, null, null);
+    }
+}
+
+static HttpClient CreateRabbitMqClient(RabbitMqOptions options)
+{
+    var client = new HttpClient { BaseAddress = new Uri(options.ManagementUrl.TrimEnd('/') + "/") };
+    var auth = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{options.User}:{options.Password}"));
+    client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", auth);
+    return client;
+}
+
+static bool IsRabbitMqEnabled()
+{
+    var value = Environment.GetEnvironmentVariable("RABBITMQ_ENABLED")
+        ?? Environment.GetEnvironmentVariable("RabbitMQ__Enabled");
+    return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(value, "1", StringComparison.OrdinalIgnoreCase);
+}
+
+static async Task<WorkspaceSnapshot> LoadWorkspaceSnapshotAsync(IHttpClientFactory factory, HttpRequest request)
+{
+    var projectsTask = GetJsonFromServiceAsync<List<AiProject>>(factory.CreateClient("project"), "/api/projects", request);
+    var tasksTask = GetJsonFromServiceAsync<List<AiTask>>(factory.CreateClient("task"), "/api/tasks", request);
+    var usersTask = GetJsonFromServiceAsync<List<AiUser>>(factory.CreateClient("notify"), "/api/users", request);
+    var logsTask = GetJsonFromServiceAsync<List<ActivityLogDto>>(factory.CreateClient("notify"), "/api/activity-logs", request);
+
+    await Task.WhenAll(projectsTask, tasksTask, usersTask, logsTask);
+    return new WorkspaceSnapshot(
+        projectsTask.Result ?? [],
+        tasksTask.Result ?? [],
+        usersTask.Result ?? [],
+        logsTask.Result ?? []);
+}
+
+static async Task<T?> GetJsonFromServiceAsync<T>(HttpClient client, string path, HttpRequest sourceRequest)
+{
+    try
+    {
+        using var message = new HttpRequestMessage(HttpMethod.Get, path);
+        AttachAuthorization(message, sourceRequest);
+        using var response = await client.SendAsync(message);
+        if (!response.IsSuccessStatusCode) return default;
+        return await response.Content.ReadFromJsonAsync<T>(JsonOptions());
+    }
+    catch
+    {
+        return default;
+    }
+}
+
+static void AttachAuthorization(HttpRequestMessage message, HttpRequest sourceRequest)
+{
+    var authorization = sourceRequest.Headers.Authorization.ToString();
+    if (!string.IsNullOrWhiteSpace(authorization))
+    {
+        message.Headers.TryAddWithoutValidation("Authorization", authorization);
+    }
+}
+
+static async Task<string> GenerateAiAnswerAsync(IHttpClientFactory factory, UserDto? user, string mode, string? prompt, WorkspaceSnapshot snapshot)
+{
+    var fallback = BuildFallbackAiAnswer(user, mode, prompt, snapshot);
+    var provider = await TryCallAiProviderAsync(factory, user, mode, prompt, snapshot);
+    return string.IsNullOrWhiteSpace(provider) ? fallback : provider;
+}
+
+static async Task<string?> TryCallAiProviderAsync(IHttpClientFactory _, UserDto? user, string mode, string? prompt, WorkspaceSnapshot snapshot)
+{
+    var token = Environment.GetEnvironmentVariable("AI_PROVIDER_TOKEN");
+    var baseUrl = Environment.GetEnvironmentVariable("AI_PROVIDER_BASE_URL");
+    if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(baseUrl))
+    {
+        return null;
+    }
+
+    try
+    {
+        using var client = new HttpClient { BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/") };
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        var model = Environment.GetEnvironmentVariable("AI_PROVIDER_MODEL");
+        if (string.IsNullOrWhiteSpace(model)) model = "gpt-4o-mini";
+
+        var system = "Bạn là trợ lý SprintFlow. Trả lời ngắn gọn bằng tiếng Việt, ưu tiên JSON khi đề xuất task. Không tiết lộ token.";
+        var context = BuildWorkspaceContext(user, mode, snapshot);
+        using var response = await client.PostAsJsonAsync("chat/completions", new
+        {
+            model,
+            temperature = 0.25,
+            messages = new[]
+            {
+                new { role = "system", content = system },
+                new { role = "user", content = $"{context}\n\nYêu cầu: {prompt}" }
+            }
+        });
+        if (!response.IsSuccessStatusCode) return null;
+
+        var raw = await response.Content.ReadAsStringAsync();
+        using var document = JsonDocument.Parse(raw);
+        var root = document.RootElement;
+        if (TryGetProperty(root, "choices", out var choices) && choices.ValueKind == JsonValueKind.Array && choices.GetArrayLength() > 0)
+        {
+            var first = choices[0];
+            if (TryGetProperty(first, "message", out var message)
+                && TryGetProperty(message, "content", out var content))
+            {
+                return content.GetString();
+            }
+        }
+    }
+    catch
+    {
+        return null;
+    }
+
+    return null;
+}
+
+static string BuildFallbackAiAnswer(UserDto? user, string mode, string? prompt, WorkspaceSnapshot snapshot)
+{
+    var total = snapshot.Tasks.Count;
+    var done = snapshot.Tasks.Count(task => task.Status == "Done");
+    var overdue = snapshot.Tasks.Count(task => task.Status != "Done" && DateOnly.TryParse(task.DueDate, out var due) && due < DateOnly.FromDateTime(DateTime.Today));
+    var assignee = user?.FullName ?? "khach";
+
+    if (mode == "landing")
+    {
+        return "SprintFlow là hệ thống quản lý dự án microservices: ProjectService quản lý dự án, TaskService quản lý Kanban/task, NotifyService quản lý JWT, comment, activity log, notification và AI. Frontend chỉ gọi API Gateway.";
+    }
+
+    if (mode == "meeting-to-tasks")
+    {
+        return $"Đã tách nội dung họp thành các đầu việc ưu tiên cho {assignee}. Hãy kiểm tra deadline và người phụ trách trước khi bấm tạo task thật.";
+    }
+
+    if (mode == "suggest-tasks")
+    {
+        return $"Workspace hiện có {total} task, {done} đã hoàn thành, {overdue} quá hạn. Ưu tiên tiếp theo là xử lý task quá hạn, bổ sung checklist và gán người phụ trách rõ ràng.";
+    }
+
+    return $"Xin chào {assignee}. Tôi đã đọc nhanh {snapshot.Projects.Count} project, {total} task, {snapshot.Users.Count} người dùng và {snapshot.ActivityLogs.Count} activity log. Câu hỏi của bạn: {prompt}";
+}
+
+static string BuildWorkspaceContext(UserDto? user, string mode, WorkspaceSnapshot snapshot)
+{
+    var tasks = snapshot.Tasks.Take(20).Select(task => new { task.Title, task.Status, task.Priority, task.DueDate, task.ProjectId, task.AssigneeId });
+    var projects = snapshot.Projects.Take(10).Select(project => new { project.Id, project.Name, project.StatusText, project.Progress });
+    return JsonSerializer.Serialize(new
+    {
+        mode,
+        currentUser = user is null ? null : new { user.Id, user.FullName, user.Role },
+        projects,
+        tasks,
+        users = snapshot.Users.Take(20).Select(u => new { u.Id, u.FullName, u.Role }),
+        recentActivity = snapshot.ActivityLogs.Take(12)
+    }, JsonOptions());
+}
+
+static List<string> BuildAiSuggestions(WorkspaceSnapshot snapshot, UserDto user)
+{
+    var mine = snapshot.Tasks.Count(task => (task.AssigneeId ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Contains(user.Id));
+    return new List<string>
+    {
+        $"Kiểm tra {mine} task đang gán cho bạn",
+        "Tạo task từ biên bản họp",
+        "Tóm tắt rủi ro và deadline của project"
+    };
+}
+
+static List<AiTaskSuggestion> BuildTaskSuggestions(WorkspaceSnapshot snapshot, UserDto user, string? prompt)
+{
+    var project = snapshot.Projects.OrderBy(project => project.Progress).FirstOrDefault()
+        ?? new AiProject("p_ai_default", "SprintFlow Core", "AI generated project", "Đang triển khai", 0);
+    var candidates = snapshot.Users.Where(u => u.Role is not "Viewer").Take(4).ToList();
+    var assignee = candidates.FirstOrDefault(u => u.Id != user.Id) ?? candidates.FirstOrDefault();
+    var due = DateOnly.FromDateTime(DateTime.Today.AddDays(3)).ToString("yyyy-MM-dd");
+    var text = string.IsNullOrWhiteSpace(prompt) ? "Hoàn thiện SprintFlow demo" : prompt.Trim();
+
+    return new List<AiTaskSuggestion>
+    {
+        new("Phân tích yêu cầu: " + TrimTitle(text, 42), "Tổng hợp yêu cầu, phạm vi và tiêu chí nghiệm thu để nhóm bám đúng đề bài.", "High", due, project.Id, assignee?.Id, new List<string> { "phan-tich", "ai" }, 4, "Cần có đầu vào rõ trước khi chia task."),
+        new("Tạo checklist demo cho " + project.Name, "Tạo subtask, deadline, người phụ trách và dữ liệu để thầy thấy F12 qua Gateway.", "Medium", DateOnly.FromDateTime(DateTime.Today.AddDays(5)).ToString("yyyy-MM-dd"), project.Id, assignee?.Id ?? user.Id, new List<string> { "demo", "gateway" }, 6, "Tăng điểm demo nghiệp vụ."),
+        new("Kiểm thử notification và activity log", "Tạo comment, mention, mark read và đổi trạng thái để NotifyService sinh thông báo realtime.", "High", DateOnly.FromDateTime(DateTime.Today.AddDays(2)).ToString("yyyy-MM-dd"), project.Id, user.Id, new List<string> { "notify", "test" }, 3, "Nhóm 3 là phần cần nổi bật.")
+    };
+}
+
+static AiTaskSuggestion BuildTaskDraft(WorkspaceSnapshot snapshot, UserDto user, AiCreateTaskRequest request)
+{
+    var firstSuggestion = BuildTaskSuggestions(snapshot, user, request.Prompt).First();
+    var projectId = string.IsNullOrWhiteSpace(request.ProjectId) ? firstSuggestion.ProjectId : request.ProjectId;
+    var assigneeId = string.IsNullOrWhiteSpace(request.AssigneeId) ? firstSuggestion.AssigneeId ?? user.Id : request.AssigneeId;
+    var dueDate = string.IsNullOrWhiteSpace(request.DueDate) ? firstSuggestion.DueDate : request.DueDate;
+    var priority = string.IsNullOrWhiteSpace(request.Priority) ? firstSuggestion.Priority : request.Priority;
+    var title = TrimTitle(request.Prompt, 80);
+    if (string.IsNullOrWhiteSpace(title)) title = firstSuggestion.Title;
+
+    return firstSuggestion with
+    {
+        Title = title,
+        Description = $"AI tạo từ yêu cầu: {request.Prompt}. Admin đã xem bản nháp trước khi xác nhận.",
+        ProjectId = projectId,
+        AssigneeId = assigneeId,
+        DueDate = dueDate,
+        Priority = priority
+    };
+}
+
+static List<AiTaskSuggestion> BuildMeetingTasks(WorkspaceSnapshot snapshot, UserDto user, string notes)
+{
+    var lines = (notes ?? "").Split(['\r', '\n', '.', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+        .Where(line => line.Length > 8)
+        .Take(5)
+        .ToList();
+    if (lines.Count == 0) lines.Add("Tổng hợp biên bản họp và chia task cho các nhóm");
+
+    var baseSuggestions = BuildTaskSuggestions(snapshot, user, notes);
+    return lines.Select((line, index) =>
+    {
+        var seed = baseSuggestions[Math.Min(index, baseSuggestions.Count - 1)];
+        return seed with
+        {
+            Title = TrimTitle(line, 70),
+            Description = $"Task sinh từ meeting note: {line}",
+            DueDate = DateOnly.FromDateTime(DateTime.Today.AddDays(index + 2)).ToString("yyyy-MM-dd")
+        };
+    }).ToList();
+}
+
+static string TrimTitle(string? value, int max)
+{
+    var text = (value ?? "").Trim();
+    if (text.Length <= max) return text;
+    return text[..max].TrimEnd() + "...";
+}
+
+static bool HasAiProvider()
+{
+    return !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AI_PROVIDER_TOKEN"))
+        && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("AI_PROVIDER_BASE_URL"));
+}
+
+static JsonSerializerOptions JsonOptions() => new(JsonSerializerDefaults.Web) { PropertyNameCaseInsensitive = true };
+
+static bool TryGetProperty(JsonElement element, string name, out JsonElement value)
+{
+    foreach (var property in element.EnumerateObject())
+    {
+        if (string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+        {
+            value = property.Value;
+            return true;
+        }
+    }
+
+    value = default;
+    return false;
+}
+
 static async Task<ServiceHealthDto> CheckServiceAsync(IHttpClientFactory factory, string clientName, string displayName)
 {
     try
@@ -872,3 +1373,37 @@ record ActivityLogDto(string Id, string? UserId, string? UserName, string Action
 record NotificationPreferenceDto(string UserId, bool ToastEnabled, bool SoundEnabled, bool DailyDigestEnabled, bool TaskEventsEnabled, bool ProjectEventsEnabled, bool CommentEventsEnabled, string UpdatedAt);
 record RouteInfoDto(string Area, string GatewayPath, string TargetService, string InternalTarget, string OwnerGroup);
 record ServiceHealthDto(string Service, string BaseUrl, string Status, int StatusCode, bool Ok);
+record BrokerHealthDto(string Service, string Status, bool Ok, string Message, string? Exchange, string? Queue);
+record AiChatRequest(string? Message);
+record AiPromptRequest(string? Prompt);
+record AiChatResponse(string Answer, string Source, bool UsedProvider, List<string> Suggestions);
+record AiCreateTaskRequest(string? Prompt, bool Confirm, string? ProjectId, string? AssigneeId, string? DueDate, string? Priority);
+record AiCreateTaskResponse(bool Created, JsonElement? Task, AiTaskSuggestion Draft, string Message);
+record AiProjectSummaryRequest(string? ProjectId);
+record AiMeetingRequest(string Notes);
+record AiTaskSuggestion(string Title, string Description, string Priority, string DueDate, string ProjectId, string? AssigneeId, List<string> Labels, double EstimatedHours, string Reason);
+record AiTaskCreatePayload(string Title, string Description, string Status, string Priority, string DueDate, string ProjectId, string? AssigneeId, string CreatorId, List<string>? Labels, double EstimatedHours);
+record WorkspaceSnapshot(List<AiProject> Projects, List<AiTask> Tasks, List<AiUser> Users, List<ActivityLogDto> ActivityLogs);
+record AiProject(string Id, string Name, string? Description, string? StatusText, int Progress);
+record AiTask(string Id, string Title, string? Description, string Status, string Priority, string DueDate, string ProjectId, string? AssigneeId, double EstimatedHours, double LoggedHours, List<string>? Labels);
+record AiUser(string Id, string FullName, string Role, bool IsOnline, string? Email);
+record RabbitGetMessage(string Payload);
+record RabbitMqOptions(string ManagementUrl, string User, string Password, string Exchange, string Queue)
+{
+    public static RabbitMqOptions FromEnvironment() => new(
+        Environment.GetEnvironmentVariable("RABBITMQ_MANAGEMENT_URL")
+            ?? Environment.GetEnvironmentVariable("RabbitMQ__ManagementUrl")
+            ?? "http://rabbitmq:15672",
+        Environment.GetEnvironmentVariable("RABBITMQ_USER")
+            ?? Environment.GetEnvironmentVariable("RabbitMQ__User")
+            ?? "guest",
+        Environment.GetEnvironmentVariable("RABBITMQ_PASSWORD")
+            ?? Environment.GetEnvironmentVariable("RabbitMQ__Password")
+            ?? "guest",
+        Environment.GetEnvironmentVariable("RABBITMQ_EXCHANGE")
+            ?? Environment.GetEnvironmentVariable("RabbitMQ__Exchange")
+            ?? "sprintflow.events",
+        Environment.GetEnvironmentVariable("RABBITMQ_QUEUE")
+            ?? Environment.GetEnvironmentVariable("RabbitMQ__Queue")
+            ?? "notify.events");
+}

@@ -1,20 +1,14 @@
 # Hướng Dẫn Demo Đầy Đủ SprintFlow
 
-File này dùng để chạy thử, demo cho thầy và chia việc cho 3 nhóm khi báo cáo.
+File này dùng để chạy thử, demo cho thầy và chia phần trình bày cho 3 nhóm.
 
-## 1. Chạy local nhanh
+## 1. Chạy local bằng Docker
 
-Backend microservices có thể chạy bằng Docker theo yêu cầu đề bài:
+Backend microservices chạy bằng Docker đúng yêu cầu đề bài. VueJS chạy riêng trên host.
 
 ```powershell
 cd C:\Users\linzi\Downloads\BTL_FULLSTACK\ProjectHub
-Copy-Item .env.local.example .env -Force
-docker compose -f docker-compose.microservices.yml up -d --build
-```
-
-Frontend VueJS chạy trực tiếp trên host:
-
-```powershell
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
 npm install --prefix frontend
 npm run dev --prefix frontend -- --host 0.0.0.0 --port 8080
 ```
@@ -25,18 +19,38 @@ Mở web:
 http://localhost:8080
 ```
 
-## 2. Chạy kiểu đang test local bằng dotnet
+Gateway local:
 
-Nếu Docker Desktop bị treo, có thể chạy nhanh bằng `dotnet run` từng service và vẫn giữ đúng mô hình Gateway:
-
-```powershell
-dotnet run --project Microservices\ProjectService\ProjectService.csproj --urls http://localhost:5101
-dotnet run --project Microservices\TaskService\TaskService.csproj --urls http://localhost:5102
-dotnet run --project Microservices\NotifyService\NotifyService.csproj --urls http://localhost:5103
-dotnet run --project Microservices\ApiGateway\ApiGateway.csproj --urls http://localhost:7100
-$env:VITE_API_BASE_URL="http://localhost:7100/api"
-npm run dev --prefix frontend -- --host 0.0.0.0 --port 8080
+```text
+http://localhost:7000/api
 ```
+
+## 2. Chạy trên VPS
+
+Web public:
+
+```text
+http://103.77.242.126
+```
+
+Gateway public:
+
+```text
+http://103.77.242.126/api
+```
+
+Trên VPS, backend Docker gồm:
+
+```text
+api-gateway
+project-service
+task-service
+notify-service
+sqlserver
+rabbitmq
+```
+
+Frontend VueJS build ra thư mục `dist` và copy vào `/var/www/sprintflow`.
 
 ## 3. Tài khoản demo
 
@@ -67,22 +81,43 @@ viewer02@projecthub.com   / 123456     Viewer
 1. Đăng nhập bằng `admin@projecthub.com / admin123`.
 2. Mở F12 -> Network -> Fetch/XHR.
 3. Vào Dashboard để chứng minh app gọi `/api/projects`, `/api/tasks`, `/api/notifications`, `/api/diagnostics/services`.
-4. Vào Dự án, tạo hoặc sửa một project, kiểm tra request `/api/projects`.
-5. Vào Kanban, đổi trạng thái task, kiểm tra request `/api/tasks/{id}/status`.
-6. Vào Danh sách công việc, dùng tìm kiếm, lọc trạng thái, phân trang và mở chi tiết task.
-7. Trong Task Detail, tích subtask, log giờ làm, thêm comment và xem activity timeline.
-8. Vào Tiến độ (Gantt), lọc theo project và mở task từ thanh timeline.
-9. Vào Thống kê, trình bày workload, task trễ hạn, task hoàn thành và bảng năng suất.
-10. Vào Tài liệu, tạo một tài liệu API hoặc biên bản họp.
-11. Vào Quản trị, xem danh sách tài khoản demo, đổi vai trò hoặc đổi mật khẩu user.
-12. Trong Quản trị, bấm `Mẫu Excel`, import nhân viên từ CSV và bấm `Xuất tài khoản`.
-13. Ở Projects, Kanban, My Task, Gantt, Analytics, Wiki, Notifications, Activity Log bấm nút tải CSV để chứng minh có xuất dữ liệu.
-14. Vào Thông báo, lọc unread/read, mark read, mark all read và delete.
-15. Vào Cài đặt/Diagnostics để chứng minh Gateway và 3 service đều OK.
+4. Vào Dự án, tạo hoặc sửa một project, đổi tên dự án, thêm thành viên.
+5. Vào Kanban hoặc My Task, đổi trạng thái task và mở chi tiết task.
+6. Trong Task Detail, tick subtask, log giờ làm, thêm comment và @mention.
+7. Vào Tiến độ (Gantt), lọc theo project và mở task từ thanh timeline.
+8. Vào Thống kê, trình bày workload, task trễ hạn, task hoàn thành và bảng năng suất.
+9. Vào Tài liệu, tạo một tài liệu API hoặc biên bản họp.
+10. Vào Quản trị, xem danh sách tài khoản demo, phân trang, đổi role, reset mật khẩu.
+11. Trong Quản trị, tải mẫu CSV/Excel, import nhân viên hàng loạt và xuất danh sách tài khoản.
+12. Vào Thông báo, lọc unread/read, mark read, mark all read và delete.
+13. Vào My Task, dùng AI để hỏi, gợi ý task và tạo task thật.
+14. Vào Cài đặt/Diagnostics để chứng minh Gateway, 3 service và RabbitMQ đều OK.
 
-## 5. Checklist F12
+## 5. Demo AI và RabbitMQ
 
-Khi demo, tab Network chỉ nên xuất hiện Gateway:
+Kiến trúc bổ sung:
+
+```text
+ProjectService / TaskService -> RabbitMQ exchange sprintflow.events -> NotifyService consumer
+Frontend Vue -> API Gateway -> NotifyService /api/ai/*
+AI token chỉ nằm ở backend env, không nằm trong Vue.
+Nếu chưa cấu hình token thật, NotifyService dùng fallback assistant dựa trên dữ liệu project/task/user thật.
+```
+
+Khi trình bày:
+
+```text
+1. Mở My Task, dùng panel AI để hỏi tóm tắt workspace.
+2. Bấm Gợi ý task, AI đọc project/task/user/activity log và trả về danh sách đề xuất.
+3. Admin/PM mới có nút tạo task thật. User thường chỉ xem gợi ý.
+4. Khi tạo task thật, request đi qua /api/ai/create-task-from-text -> Gateway -> NotifyService -> TaskService.
+5. TaskService publish event qua RabbitMQ, NotifyService consume event để tạo notification và activity log.
+6. Mở /api/diagnostics/broker để chứng minh RabbitMQ queue sẵn sàng.
+```
+
+## 6. Checklist F12
+
+Chỉ nên thấy Gateway:
 
 ```text
 POST  /api/auth/login
@@ -94,6 +129,10 @@ GET   /api/notifications
 GET   /api/activity-logs
 GET   /api/diagnostics/services
 GET   /api/diagnostics/routes
+GET   /api/diagnostics/broker
+POST  /api/ai/chat
+POST  /api/ai/suggest-tasks
+POST  /api/ai/create-task-from-text
 ```
 
 Không được thấy frontend gọi thẳng:
@@ -107,22 +146,29 @@ task-service
 notify-service
 ```
 
-## 6. Test tự động trước khi bàn giao
+## 7. Test tự động trước khi bàn giao
 
 ```powershell
 dotnet build Microservices\ProjectHubMicroservices.slnx
 npm run build --prefix frontend
-.\scripts\check-sprintflow-health.ps1 -GatewayBase http://localhost:7100 -ProjectBase http://localhost:5101 -TaskBase http://localhost:5102 -NotifyBase http://localhost:5103
-.\scripts\test-sprintflow-flow.ps1 -GatewayBase http://localhost:7100
+docker compose -f docker-compose.prod.yml config
+.\scripts\test-sprintflow-ai-broker.ps1 -ApiBase http://localhost:7000/api
+.\scripts\test-sprintflow-ai-broker.ps1 -ApiBase http://103.77.242.126/api
 ```
 
-## 7. Vai trò từng nhóm khi báo cáo
+Nếu muốn tạo task thật từ AI:
+
+```powershell
+.\scripts\test-sprintflow-ai-broker.ps1 -ApiBase http://103.77.242.126/api -CreateRealTask
+```
+
+## 8. Vai trò từng nhóm khi báo cáo
 
 Nhóm 1:
 
 ```text
 Trình bày ProjectService: project, member, sprint, milestone, project timeline.
-Demo tạo project và thêm thành viên.
+Demo tạo project, đổi tên project và thêm thành viên.
 ```
 
 Nhóm 2:
@@ -136,23 +182,5 @@ Nhóm 3:
 
 ```text
 Trình bày NotifyService và Gateway: JWT auth, user management, comment, notification,
-activity log, diagnostics và chứng minh F12 chỉ gọi Gateway.
-```
-
-## 8. Import/export dữ liệu
-
-```text
-Admin có chức năng import nhân viên hàng loạt bằng file CSV mở được bằng Excel.
-Nút Mẫu Excel tải file mẫu gồm fullName, email, role, password, isOnline.
-Nút Xuất tài khoản tải danh sách user, email, role và mật khẩu demo.
-Các trang dữ liệu chính đều có nút tải CSV: Projects, Kanban, My Task, Gantt, Analytics, Wiki, Notifications và Activity Log.
-```
-
-## 9. Câu nói chốt khi thầy hỏi
-
-```text
-Bọn em tách đúng 3 service backend chạy Docker, frontend VueJS chạy trực tiếp trên host.
-Gateway là điểm vào duy nhất của frontend.
-Các service có dữ liệu riêng và giao tiếp qua API/event, không gọi chéo database.
-Nhóm 3 làm nổi bật phần Auth, Comment, Notification, Activity Log, Diagnostics và quản trị user.
+activity log, RabbitMQ consumer, AI assistant, diagnostics và chứng minh F12 chỉ gọi Gateway.
 ```

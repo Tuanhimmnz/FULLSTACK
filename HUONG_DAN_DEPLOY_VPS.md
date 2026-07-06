@@ -97,3 +97,52 @@ GET /api/tasks: OK
 GET /api/users: OK
 GET /api/notifications: OK
 ```
+
+## 6. Cap nhat moi: RabbitMQ va AI
+
+Backend Docker tren VPS hien co them RabbitMQ:
+
+```text
+RabbitMQ container: rabbitmq:3-management
+Exchange: sprintflow.events
+Queue NotifyService consume: notify.events
+ProjectService va TaskService publish event vao exchange nay.
+NotifyService consume queue de tao notification va activity log.
+```
+
+Bien moi trong `.env.prod`:
+
+```bash
+RABBITMQ_ENABLED=true
+RABBITMQ_USER=sprintflow
+RABBITMQ_PASSWORD=doi-mat-khau-rabbitmq
+RABBITMQ_EXCHANGE=sprintflow.events
+RABBITMQ_QUEUE=notify.events
+
+AI_PROVIDER_TOKEN=
+AI_PROVIDER_BASE_URL=
+AI_PROVIDER_MODEL=
+```
+
+Luu y bao mat:
+
+```text
+Khong dua token AI vao frontend Vue.
+Frontend chi goi /api/ai/* qua Gateway.
+NotifyService doc AI_PROVIDER_TOKEN tu env. Neu chua co token, service dung fallback demo.
+```
+
+Test nhanh sau deploy:
+
+```powershell
+.\scripts\test-sprintflow-ai-broker.ps1 -ApiBase http://103.77.242.126/api
+```
+
+Test tren VPS:
+
+```bash
+cd /opt/sprintflow
+docker compose -f docker-compose.prod.yml --env-file .env.prod ps
+curl http://127.0.0.1:7000/health
+curl -H "Authorization: Bearer <TOKEN>" http://127.0.0.1:7000/api/diagnostics/broker
+```

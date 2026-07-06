@@ -1,7 +1,9 @@
 using System.Data;
+using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Claims;
 using System.Text;
+using System.Text.Json;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.Data.SqlClient;
 using Microsoft.IdentityModel.Tokens;
@@ -302,6 +304,11 @@ static List<string> SplitIds(string? ids) => string.IsNullOrWhiteSpace(ids) ? []
 
 static async Task PublishTaskEventAsync(IHttpClientFactory factory, TaskEventRequest request)
 {
+    if (await TryPublishBrokerEventAsync("TaskService", request.Type, "task", request))
+    {
+        return;
+    }
+
     try
     {
         await factory.CreateClient("notify").PostAsJsonAsync("/api/internal/task-events", request);
@@ -310,6 +317,52 @@ static async Task PublishTaskEventAsync(IHttpClientFactory factory, TaskEventReq
     {
         // Service must continue if notification service is temporarily down.
     }
+}
+
+static async Task<bool> TryPublishBrokerEventAsync(string sourceService, string routingKey, string eventKind, object data)
+{
+    if (!IsRabbitMqEnabled()) return false;
+
+    try
+    {
+        var options = RabbitMqOptions.FromEnvironment();
+        using var client = new HttpClient { BaseAddress = new Uri(options.ManagementUrl.TrimEnd('/') + "/") };
+        var auth = Convert.ToBase64String(Encoding.ASCII.GetBytes($"{options.User}:{options.Password}"));
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Basic", auth);
+
+        var envelope = JsonSerializer.Serialize(new BrokerEventEnvelope(
+            sourceService,
+            eventKind,
+            data,
+            DateTimeOffset.UtcNow.ToString("O")));
+        var body = JsonSerializer.Serialize(new
+        {
+            properties = new { content_type = "application/json" },
+            routing_key = routingKey,
+            payload = envelope,
+            payload_encoding = "string"
+        });
+
+        using var response = await client.PostAsync(
+            $"api/exchanges/%2f/{Uri.EscapeDataString(options.Exchange)}/publish",
+            new StringContent(body, Encoding.UTF8, "application/json"));
+        if (!response.IsSuccessStatusCode) return false;
+
+        var result = await response.Content.ReadFromJsonAsync<RabbitPublishResponse>();
+        return result?.Routed == true;
+    }
+    catch
+    {
+        return false;
+    }
+}
+
+static bool IsRabbitMqEnabled()
+{
+    var value = Environment.GetEnvironmentVariable("RABBITMQ_ENABLED")
+        ?? Environment.GetEnvironmentVariable("RabbitMQ__Enabled");
+    return string.Equals(value, "true", StringComparison.OrdinalIgnoreCase)
+        || string.Equals(value, "1", StringComparison.OrdinalIgnoreCase);
 }
 
 static Task AddTaskHistoryAsync(SqlConnection conn, string taskId, UserDto user, string action, string? fromValue, string? toValue, string message)
@@ -564,3 +617,21 @@ record WorkLogDto(string Id, string TaskId, string UserName, double Hours, strin
 record WorkLogClientDto(string Id, string UserName, double Hours, string Description, string CreatedAt);
 record TaskHistoryDto(string Id, string TaskId, string? UserId, string? UserName, string Action, string? FromValue, string? ToValue, string Message, string CreatedAt);
 record TaskEventRequest(string Type, string Title, string Message, string? TaskId, string? ProjectId, List<string> RecipientUserIds, UserDto? Actor);
+record BrokerEventEnvelope(string SourceService, string EventKind, object Data, string PublishedAt);
+record RabbitPublishResponse(bool Routed);
+record RabbitMqOptions(string ManagementUrl, string User, string Password, string Exchange)
+{
+    public static RabbitMqOptions FromEnvironment() => new(
+        Environment.GetEnvironmentVariable("RABBITMQ_MANAGEMENT_URL")
+            ?? Environment.GetEnvironmentVariable("RabbitMQ__ManagementUrl")
+            ?? "http://rabbitmq:15672",
+        Environment.GetEnvironmentVariable("RABBITMQ_USER")
+            ?? Environment.GetEnvironmentVariable("RabbitMQ__User")
+            ?? "guest",
+        Environment.GetEnvironmentVariable("RABBITMQ_PASSWORD")
+            ?? Environment.GetEnvironmentVariable("RabbitMQ__Password")
+            ?? "guest",
+        Environment.GetEnvironmentVariable("RABBITMQ_EXCHANGE")
+            ?? Environment.GetEnvironmentVariable("RabbitMQ__Exchange")
+            ?? "sprintflow.events");
+}

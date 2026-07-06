@@ -605,18 +605,47 @@
         <div class="footer-copy reveal-up" style="--delay: 0.2s">© 2026 SprintFlow · Hệ thống quản lý dự án</div>
       </div>
     </footer>
+
+    <div class="landing-ai-widget">
+      <button type="button" class="landing-ai-toggle" @click="landingAiOpen = !landingAiOpen">
+        AI
+      </button>
+      <div v-if="landingAiOpen" class="landing-ai-panel">
+        <div>
+          <p class="landing-ai-kicker">SprintFlow AI</p>
+          <h3>Trợ lý giới thiệu hệ thống</h3>
+          <p class="landing-ai-answer">{{ landingAiAnswer }}</p>
+        </div>
+        <div class="landing-ai-row">
+          <input
+            v-model="landingAiQuestion"
+            type="text"
+            placeholder="Hỏi về Gateway, Docker, 3 nhóm..."
+            @keyup.enter="askLandingAi"
+          />
+          <button type="button" :disabled="landingAiLoading" @click="askLandingAi">
+            {{ landingAiLoading ? '...' : 'Gửi' }}
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import Lenis from 'lenis'
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
+import { apiService } from '../services/api'
 
 
 let lenis: any;
 let rafId: number;
 const currentLang = ref('vi');
 const langMenuOpen = ref(false);
+const landingAiOpen = ref(false);
+const landingAiLoading = ref(false);
+const landingAiQuestion = ref('SprintFlow hoạt động như thế nào?');
+const landingAiAnswer = ref('SprintFlow dùng API Gateway làm cổng duy nhất, backend tách thành ProjectService, TaskService, NotifyService và RabbitMQ để truyền event.');
 
 const activeFeature = ref(0);
 
@@ -624,6 +653,18 @@ const setLang = (lang: string) => {
   currentLang.value = lang;
   langMenuOpen.value = false;
 };
+
+async function askLandingAi() {
+  landingAiLoading.value = true;
+  try {
+    const result = await apiService.aiLandingChat(landingAiQuestion.value);
+    landingAiAnswer.value = result.answer;
+  } catch {
+    landingAiAnswer.value = 'SprintFlow gồm frontend Vue, API Gateway, ProjectService, TaskService, NotifyService, SQL Server và RabbitMQ. Frontend không gọi thẳng service.';
+  } finally {
+    landingAiLoading.value = false;
+  }
+}
 
 const tNav = computed(() => currentLang.value === 'vi' ? {
   features: 'Tính năng', how: 'Cách hoạt động', stats: 'Kiến trúc',
@@ -3444,6 +3485,89 @@ const services = [
 /* Fix IntersectionObserver and Scrolling bugs */
 html, body {
   overflow-x: clip !important;
+}
+
+.landing-ai-widget {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12px;
+}
+
+.landing-ai-toggle {
+  width: 58px;
+  height: 58px;
+  border: 0;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #06b6d4, #7c3aed);
+  color: white;
+  font-weight: 900;
+  box-shadow: 0 18px 45px rgba(124, 58, 237, 0.35);
+  cursor: pointer;
+}
+
+.landing-ai-panel {
+  width: min(380px, calc(100vw - 32px));
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 24px;
+  background: rgba(12, 12, 20, 0.92);
+  padding: 18px;
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(18px);
+}
+
+.landing-ai-kicker {
+  margin: 0 0 4px;
+  color: #22d3ee;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.landing-ai-panel h3 {
+  margin: 0;
+  color: white;
+  font-size: 1rem;
+  font-weight: 900;
+}
+
+.landing-ai-answer {
+  margin: 10px 0 14px;
+  color: #cbd5e1;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.55;
+}
+
+.landing-ai-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.landing-ai-row input {
+  min-width: 0;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.06);
+  color: white;
+  padding: 12px;
+  outline: none;
+}
+
+.landing-ai-row button {
+  border: 0;
+  border-radius: 14px;
+  background: #7c3aed;
+  color: white;
+  padding: 0 16px;
+  font-weight: 900;
+  cursor: pointer;
 }
 
 </style>

@@ -9,24 +9,21 @@ Frontend VueJS -> API Gateway -> 3 service backend
 ProjectService -> ProjectDB
 TaskService -> TaskDB
 NotifyService -> NotifyDB
+ProjectService / TaskService -> RabbitMQ -> NotifyService
 ```
 
 Frontend chỉ gọi Gateway. Khi mở F12/Network, các request nghiệp vụ phải đi qua `/api/...`, không gọi thẳng port service.
 
-## 2. Phân công nhiệm vụ 3 nhóm
+## 2. Chức năng theo nhóm
 
 ### Nhóm 1 - Project & Member Service
 
-Phụ trách quản lý dự án và thành viên.
-
-Chức năng:
-
 ```text
-CRUD project
-Quản lý thành viên theo vai trò
-Theo dõi tiến độ project
-Project activity
-Publish project event cho NotifyService
+CRUD project.
+Quản lý thành viên theo vai trò Owner, Manager, Member, Viewer.
+Theo dõi tiến độ project.
+Sprint, milestone, project activity.
+Publish project event qua RabbitMQ cho NotifyService.
 ```
 
 Màn hình liên quan:
@@ -40,26 +37,22 @@ Diagnostics route /api/projects
 
 ### Nhóm 2 - Task & Kanban Service
 
-Phụ trách quản lý công việc, Kanban, subtask, worklog và lịch sử task.
-
-Chức năng:
-
 ```text
-CRUD task
-Kanban: Backlog, ToDo, InProgress, Review, Done
-Danh sách task có tìm kiếm, filter, phân trang
-Subtask checklist
-Worklog/log giờ làm
-Đổi trạng thái task
-Timeline Gantt
-Analytics workload
-Publish task event cho NotifyService
+CRUD task.
+Kanban: Backlog, ToDo, InProgress, Review, Done.
+Danh sách task có tìm kiếm, filter, phân trang.
+My Task có lịch task, board detail, Kanban và tải CSV.
+Subtask checklist.
+Worklog/log giờ làm.
+Timeline Gantt.
+Analytics workload và leaderboard.
+Publish task event qua RabbitMQ cho NotifyService.
 ```
 
 Màn hình liên quan:
 
 ```text
-Tasks
+My Task
 Kanban
 Task Detail
 Gantt
@@ -70,19 +63,16 @@ Diagnostics route /api/tasks
 
 ### Nhóm 3 - Comment & Notify Service
 
-Phụ trách Auth, User, Comment, Notification, Activity Log và Gateway demo.
-
-Chức năng:
-
 ```text
-JWT login/register/profile/password
-Admin quản lý tài khoản, xem mật khẩu demo, reset mật khẩu, đổi role
-Comment CRUD theo task
-Mention @user trong comment
-Notification center: all/unread/read, mark read, mark all read, delete
-Activity log tự động
-Consume task/project events
-Settings/Diagnostics kiểm tra 3 service
+JWT login/register/profile/password.
+Admin quản lý tài khoản, xem mật khẩu demo, reset mật khẩu, đổi role.
+Import nhân viên hàng loạt bằng CSV/Excel và xuất danh sách tài khoản.
+Comment CRUD theo task, mention @user.
+Notification center: all/unread/read, mark read, mark all read, delete.
+Activity log tự động.
+Consume project/task events từ RabbitMQ.
+AI Assistant: chat, suggest task, create task from text, summarize project, meeting to tasks.
+Settings/Diagnostics kiểm tra 3 service, broker và route table.
 ```
 
 Màn hình liên quan:
@@ -95,85 +85,98 @@ Task Detail comments
 Notifications
 Activity Log
 Settings/Diagnostics
-Wiki/Tài liệu demo
+Landing AI widget
+My Task AI Assistant
 ```
 
-## 3. Chức năng tăng điểm mới
+## 3. Chức năng tăng điểm
 
 ### Dashboard
 
 ```text
-Thống kê tổng task, task đang làm, task quá hạn, thành viên online
-Service health cho 3 nhóm
-Burndown chart 7 ngày
-Tìm kiếm task/project
-Tài khoản demo nhanh
-Notification badge và popup
+Thống kê tổng task, task đang làm, task quá hạn, thành viên online.
+Service health cho 3 nhóm.
+Burndown chart 7 ngày.
+Tìm kiếm task/project.
+Notification badge và popup.
 ```
 
-### Tasks
+### Projects
 
 ```text
-Danh sách task dạng bảng
-Search theo title, mô tả, project, người phụ trách
-Filter theo trạng thái, ưu tiên, project
-Phân trang khoảng 10 task/trang
-Mở Task Detail trực tiếp
-Hiển thị progress theo subtask và logged hours
+Tạo dự án.
+Sửa tên, mô tả, trạng thái, màu nhận diện.
+Quản lý thành viên dự án.
+Theo dõi tiến độ từng project.
+Xuất dữ liệu project ra CSV.
+```
+
+### My Task / Kanban
+
+```text
+Lịch công việc theo ngày.
+Bảng kéo thả trạng thái.
+Board detail bên phải.
+Tạo task nhanh.
+Thanh cuộn ngang đặt ở phía trên để dễ demo màn hình nhỏ.
+Tải CSV danh sách task.
 ```
 
 ### Task Detail
 
 ```text
-Đổi trạng thái task
-Tick từng subtask
-Hoàn thành toàn bộ subtask
-Log giờ làm việc
-Blocked by task
-Tag @member trong comment
-Comment CRUD
-Activity timeline
+Đổi trạng thái task.
+Tick từng subtask.
+Tự cập nhật tiến độ theo subtask/worklog.
+Log giờ làm việc.
+Blocked by task.
+Tag @member trong comment.
+Comment CRUD.
+Activity timeline.
 ```
 
 ### Gantt
 
 ```text
-Timeline theo ngày/tuần
-Filter theo project
-Thanh task theo createdAt -> dueDate
-Màu task theo trạng thái
-Avatar người phụ trách
-Click task mở Task Detail
+Timeline theo ngày/tuần.
+Filter theo project.
+Thanh task theo createdAt -> dueDate.
+Màu task theo trạng thái.
+Avatar người phụ trách.
+Click task mở Task Detail.
 ```
 
 ### Analytics
 
 ```text
-Tổng số task đang làm, trễ hạn, hoàn thành
-Biểu đồ donut trạng thái task
-Biểu đồ workload theo role
-Chi tiết tải việc từng người
-Leaderboard năng suất
-```
-
-### Wiki/Tài liệu
-
-```text
-Tạo/sửa/xóa tài liệu project
-Lọc tài liệu theo project
-Tìm kiếm tài liệu
-Lưu yêu cầu, API spec, checklist deploy, biên bản họp
-Lưu localStorage để demo chắc chắn không phụ thuộc backend mới
+Tổng số task đang làm, trễ hạn, hoàn thành.
+Biểu đồ donut trạng thái task.
+Biểu đồ workload theo role.
+Chi tiết tải việc từng người.
+Leaderboard năng suất.
 ```
 
 ### Admin User Management
 
 ```text
-Thống kê tổng người dùng, online, manager, viewer
-Danh sách người dùng đầy đủ
-Xem email, role, mật khẩu demo
-Đổi role
-Reset mật khẩu
+Thống kê tổng người dùng, online, manager, viewer.
+Danh sách người dùng đầy đủ và phân trang.
+Tìm kiếm theo tên/email/role.
+Xem email, role, mật khẩu demo.
+Đổi role.
+Reset mật khẩu.
+Import nhân viên hàng loạt bằng file CSV/Excel.
+Xuất thông tin tài khoản ra CSV.
+```
+
+### AI Assistant
+
+```text
+Landing page có AI giới thiệu sản phẩm.
+My Task có panel AI cho nhân viên và admin.
+Nhân viên có thể hỏi AI, tóm tắt công việc và xem gợi ý task.
+Admin/Project Manager có thể yêu cầu AI lập nháp task và xác nhận tạo task thật.
+Token AI nằm ở backend env, không đưa vào Vue.
 ```
 
 ## 4. Dữ liệu demo
@@ -216,11 +219,11 @@ viewer02@projecthub.com / 123456
 1. Login admin.
 2. Mở F12 -> Network -> Fetch/XHR.
 3. Chứng minh request login đi qua Gateway.
-4. Vào Dashboard, Projects, Kanban, Tasks.
+4. Vào Dashboard, Projects, Kanban, My Task.
 5. Mở Task Detail, tick subtask, log giờ, comment @mention.
 6. Vào Gantt chứng minh timeline.
 7. Vào Analytics chứng minh thống kê nguồn lực.
-8. Vào Wiki chứng minh tài liệu dự án.
-9. Vào Admin chứng minh quản lý tài khoản, role, reset mật khẩu.
-10. Vào Diagnostics chứng minh 3 service OK.
+8. Vào Admin chứng minh quản lý tài khoản, role, reset mật khẩu, import/export.
+9. Vào My Task, dùng AI gợi ý task và tạo task.
+10. Vào Diagnostics chứng minh 3 service và RabbitMQ OK.
 ```

@@ -42,6 +42,32 @@ apiClient.interceptors.response.use((response) => {
 // Cờ cấu hình: bật true để chạy thử bằng LocalStorage, tắt false để kết nối Backend thật
 const USE_MOCK = false;
 
+export interface AiChatResponse {
+  answer: string;
+  source: string;
+  usedProvider: boolean;
+  suggestions: string[];
+}
+
+export interface AiTaskSuggestion {
+  title: string;
+  description: string;
+  priority: 'High' | 'Medium' | 'Low' | string;
+  dueDate: string;
+  projectId: string;
+  assigneeId?: string;
+  labels: string[];
+  estimatedHours: number;
+  reason: string;
+}
+
+export interface AiCreateTaskResponse {
+  created: boolean;
+  task: Task | null;
+  draft: AiTaskSuggestion;
+  message: string;
+}
+
 export const apiService = {
   // --- USER API ---
   async getUsers(): Promise<User[]> {
@@ -487,6 +513,37 @@ export const apiService = {
   async resetUserPassword(userId: string, newPassword: string): Promise<void> {
     if (USE_MOCK) return Promise.resolve();
     await apiClient.put(`/users/${userId}/password`, { newPassword });
+  },
+
+  // --- AI API ---
+  async aiLandingChat(message: string): Promise<AiChatResponse> {
+    const response = await apiClient.post<AiChatResponse>('/ai/landing-chat', { message });
+    return response.data;
+  },
+
+  async aiChat(message: string): Promise<AiChatResponse> {
+    const response = await apiClient.post<AiChatResponse>('/ai/chat', { message });
+    return response.data;
+  },
+
+  async aiSuggestTasks(prompt?: string): Promise<{ summary: string; suggestions: AiTaskSuggestion[]; usedProvider: boolean }> {
+    const response = await apiClient.post<{ summary: string; suggestions: AiTaskSuggestion[]; usedProvider: boolean }>('/ai/suggest-tasks', { prompt });
+    return response.data;
+  },
+
+  async aiCreateTaskFromText(data: { prompt: string; confirm?: boolean; projectId?: string; assigneeId?: string; dueDate?: string; priority?: string }): Promise<AiCreateTaskResponse> {
+    const response = await apiClient.post<AiCreateTaskResponse>('/ai/create-task-from-text', data);
+    return response.data;
+  },
+
+  async aiSummarizeProject(projectId?: string): Promise<{ answer: string; totalTasks: number; done: number; overdue: number; usedProvider: boolean }> {
+    const response = await apiClient.post<{ answer: string; totalTasks: number; done: number; overdue: number; usedProvider: boolean }>('/ai/summarize-project', { projectId });
+    return response.data;
+  },
+
+  async aiMeetingToTasks(notes: string): Promise<{ answer: string; suggestions: AiTaskSuggestion[]; usedProvider: boolean; note: string }> {
+    const response = await apiClient.post<{ answer: string; suggestions: AiTaskSuggestion[]; usedProvider: boolean; note: string }>('/ai/meeting-to-tasks', { notes });
+    return response.data;
   },
 
   // --- PROJECT PROGRESS API ---

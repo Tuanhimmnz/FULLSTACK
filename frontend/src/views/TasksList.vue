@@ -167,6 +167,8 @@
         </article>
       </section>
 
+      <AiAssistantPanel />
+
       <section class="space-y-4">
         <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div>
@@ -331,6 +333,7 @@ import {
 import { useTaskStore } from '../stores/taskStore';
 import TaskDetailModal from '../components/TaskDetailModal.vue';
 import QuickTaskModal from '../components/QuickTaskModal.vue';
+import AiAssistantPanel from '../components/AiAssistantPanel.vue';
 import type { Task, User as SprintUser } from '../services/mockData';
 import { avatarFor, onAvatarError } from '../utils/avatar';
 import { downloadCsv } from '../utils/csv';

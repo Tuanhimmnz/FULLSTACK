@@ -1,4 +1,16 @@
 services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-sprintflow}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-SprintFlowRabbit@2026}
+    ports:
+      - "127.0.0.1:15672:15672"
+      - "127.0.0.1:5672:5672"
+    volumes:
+      - sprintflow-rabbit-data:/var/lib/rabbitmq
+    restart: unless-stopped
+
   sqlserver:
     image: mcr.microsoft.com/mssql/server:2022-latest
     environment:
@@ -21,10 +33,16 @@ services:
       Jwt__Issuer: ${JWT_ISSUER}
       Jwt__Audience: ${JWT_AUDIENCE}
       Services__NotifyService: http://notify-service:5003
+      RABBITMQ_ENABLED: ${RABBITMQ_ENABLED:-true}
+      RABBITMQ_MANAGEMENT_URL: http://rabbitmq:15672
+      RABBITMQ_USER: ${RABBITMQ_USER:-sprintflow}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-SprintFlowRabbit@2026}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-sprintflow.events}
     ports:
       - "127.0.0.1:5001:5001"
     depends_on:
       - sqlserver
+      - rabbitmq
     restart: unless-stopped
 
   task-service:
@@ -38,10 +56,16 @@ services:
       Jwt__Issuer: ${JWT_ISSUER}
       Jwt__Audience: ${JWT_AUDIENCE}
       Services__NotifyService: http://notify-service:5003
+      RABBITMQ_ENABLED: ${RABBITMQ_ENABLED:-true}
+      RABBITMQ_MANAGEMENT_URL: http://rabbitmq:15672
+      RABBITMQ_USER: ${RABBITMQ_USER:-sprintflow}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-SprintFlowRabbit@2026}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-sprintflow.events}
     ports:
       - "127.0.0.1:5002:5002"
     depends_on:
       - sqlserver
+      - rabbitmq
     restart: unless-stopped
 
   notify-service:
@@ -57,10 +81,20 @@ services:
       Services__ProjectService: http://project-service:5001
       Services__TaskService: http://task-service:5002
       Services__NotifyService: http://notify-service:5003
+      RABBITMQ_ENABLED: ${RABBITMQ_ENABLED:-true}
+      RABBITMQ_MANAGEMENT_URL: http://rabbitmq:15672
+      RABBITMQ_USER: ${RABBITMQ_USER:-sprintflow}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-SprintFlowRabbit@2026}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE:-sprintflow.events}
+      RABBITMQ_QUEUE: ${RABBITMQ_QUEUE:-notify.events}
+      AI_PROVIDER_TOKEN: ${AI_PROVIDER_TOKEN:-}
+      AI_PROVIDER_BASE_URL: ${AI_PROVIDER_BASE_URL:-}
+      AI_PROVIDER_MODEL: ${AI_PROVIDER_MODEL:-}
     ports:
       - "127.0.0.1:5003:5003"
     depends_on:
       - sqlserver
+      - rabbitmq
     restart: unless-stopped
 
   api-gateway:
@@ -84,3 +118,4 @@ services:
 
 volumes:
   sprintflow-sql-data:
+  sprintflow-rabbit-data:

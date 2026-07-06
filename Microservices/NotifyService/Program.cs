@@ -51,6 +51,7 @@ var db = new SqlDb(app.Configuration.GetConnectionString("NotifyDb")!);
 await db.EnsureDatabaseAsync("NotifyDB");
 await EnsureSchemaAsync(db);
 await SeedUsersAsync(db);
+await SeedActivityLogsAsync(db);
 
 if (IsRabbitMqEnabled())
 {
@@ -789,6 +790,34 @@ static async Task SeedUsersAsync(SqlDb db)
             "INSERT INTO Users(id, fullName, avatarUrl, role, isOnline, email, password) VALUES(@id,@fullName,@avatarUrl,@role,1,@email,@password)",
             P("@id", user.Id), P("@fullName", user.FullName), P("@avatarUrl", user.AvatarUrl),
             P("@role", user.Role), P("@email", user.Email), P("@password", user.Password));
+    }
+}
+
+static async Task SeedActivityLogsAsync(SqlDb db)
+{
+    await using var conn = await db.OpenAsync();
+    var count = await QueryAsync<string>(conn, "SELECT TOP 1 id FROM ActivityLogs");
+    if (count.Count == 0)
+    {
+        var logs = new[]
+        {
+            new { Id = "l1", UserId = "u0", UserName = "Quản trị viên (Admin)", Action = "project.created", EntityType = "project", EntityId = "p_sprintflow", TaskId = (string?)null, Message = "Quản trị viên (Admin) đã tạo dự án SprintFlow Core Platform.", CreatedAt = DateTimeOffset.UtcNow.AddDays(-3).ToString("O") },
+            new { Id = "l2", UserId = "u_pm", UserName = "Dự án Manager (PM)", Action = "sprint.started", EntityType = "project", EntityId = "p_sprintflow", TaskId = (string?)null, Message = "Dự án Manager (PM) đã bắt đầu Sprint 1 cho dự án SprintFlow.", CreatedAt = DateTimeOffset.UtcNow.AddDays(-2).ToString("O") },
+            new { Id = "l3", UserId = "u0", UserName = "Quản trị viên (Admin)", Action = "task.created", EntityType = "task-event", EntityId = "t1", TaskId = "t1", Message = "Quản trị viên (Admin) đã tạo task 'Thiết kế cơ sở dữ liệu'.", CreatedAt = DateTimeOffset.UtcNow.AddDays(-1).ToString("O") },
+            new { Id = "l4", UserId = "u_backend_01", UserName = "Backend Developer", Action = "comment.created", EntityType = "comment", EntityId = "c1", TaskId = "t1", Message = "Backend Developer đã bình luận vào task 'Thiết kế cơ sở dữ liệu'.", CreatedAt = DateTimeOffset.UtcNow.AddHours(-5).ToString("O") },
+            new { Id = "l5", UserId = "u_frontend_01", UserName = "Frontend Developer", Action = "task.status.changed", EntityType = "task-event", EntityId = "t2", TaskId = "t2", Message = "Frontend Developer đã chuyển trạng thái task 'Vẽ wireframe UI' sang In Progress.", CreatedAt = DateTimeOffset.UtcNow.AddHours(-1).ToString("O") }
+        };
+        foreach (var log in logs)
+        {
+            await ExecuteAsync(conn,
+                """
+                INSERT INTO ActivityLogs(id, userId, userName, action, entityType, entityId, taskId, message, createdAt)
+                VALUES(@id, @userId, @userName, @action, @entityType, @entityId, @taskId, @message, @createdAt)
+                """,
+                P("@id", log.Id), P("@userId", log.UserId), P("@userName", log.UserName),
+                P("@action", log.Action), P("@entityType", log.EntityType), P("@entityId", log.EntityId),
+                P("@taskId", (object?)log.TaskId ?? DBNull.Value), P("@message", log.Message), P("@createdAt", log.CreatedAt));
+        }
     }
 }
 

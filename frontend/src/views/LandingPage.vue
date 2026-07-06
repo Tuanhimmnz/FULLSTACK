@@ -620,7 +620,7 @@
         <div>
           <p class="landing-ai-kicker">SprintFlow AI</p>
           <h3>Trợ lý giới thiệu hệ thống</h3>
-          <div class="landing-ai-answer" v-html="renderMarkdown(landingAiAnswer)"></div>
+          <div ref="landingAiAnswerEl" class="landing-ai-answer" v-html="renderMarkdown(landingAiAnswer)"></div>
         </div>
         <div class="landing-ai-row">
           <input
@@ -654,6 +654,7 @@ const landingAiOpen = ref(false);
 const landingAiLoading = ref(false);
 const landingAiQuestion = ref('SprintFlow hoạt động như thế nào?');
 const landingAiAnswer = ref('SprintFlow dùng API Gateway làm cổng duy nhất, backend tách thành ProjectService, TaskService, NotifyService và RabbitMQ để truyền event.');
+const landingAiAnswerEl = ref<HTMLElement | null>(null);
 
 const activeFeature = ref(0);
 
@@ -663,16 +664,26 @@ const setLang = (lang: string) => {
 };
 
 async function askLandingAi() {
+  if (!landingAiQuestion.value.trim() || landingAiLoading.value) return;
+  const query = landingAiQuestion.value.trim();
+  landingAiQuestion.value = '';
+  
   landingAiLoading.value = true;
   try {
-    const result = await apiService.aiLandingChat(landingAiQuestion.value);
+    const result = await apiService.aiLandingChat(query);
     landingAiAnswer.value = result.answer;
   } catch {
     landingAiAnswer.value = 'SprintFlow gồm frontend Vue, API Gateway, ProjectService, TaskService, NotifyService, SQL Server và RabbitMQ. Frontend không gọi thẳng service.';
   } finally {
     landingAiLoading.value = false;
+    setTimeout(() => {
+      if (landingAiAnswerEl.value) {
+        landingAiAnswerEl.value.scrollTop = 0;
+      }
+    }, 50);
   }
 }
+
 
 const tNav = computed(() => currentLang.value === 'vi' ? {
   features: 'Tính năng', how: 'Cách hoạt động', stats: 'Kiến trúc',
@@ -3552,7 +3563,27 @@ html, body {
   line-height: 1.65;
   max-height: 350px;
   overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
 }
+
+.landing-ai-answer::-webkit-scrollbar {
+  width: 6px;
+}
+
+.landing-ai-answer::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.landing-ai-answer::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+  border-radius: 3px;
+}
+
+.landing-ai-answer::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
 
 .landing-ai-answer strong {
   color: #22d3ee;

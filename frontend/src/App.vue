@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { Bot, Loader2, Send, X } from '@lucide/vue';
 import Sidebar from './components/Sidebar.vue';
@@ -21,6 +21,19 @@ const chatMessages = ref<{ role: 'user' | 'assistant'; text: string; time: strin
 ]);
 const chatInput = ref('');
 const chatLoading = ref(false);
+const chatLogsContainer = ref<HTMLElement | null>(null);
+
+function scrollToBottom() {
+  setTimeout(() => {
+    if (chatLogsContainer.value) {
+      chatLogsContainer.value.scrollTop = chatLogsContainer.value.scrollHeight;
+    }
+  }, 60);
+}
+
+watch(isAiConsoleOpen, (open) => {
+  if (open) scrollToBottom();
+});
 
 async function sendChatMessage() {
   if (!chatInput.value.trim() || chatLoading.value) return;
@@ -32,6 +45,7 @@ async function sendChatMessage() {
     text: userMsg,
     time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   });
+  scrollToBottom();
   
   chatLoading.value = true;
   try {
@@ -49,6 +63,7 @@ async function sendChatMessage() {
     });
   } finally {
     chatLoading.value = false;
+    scrollToBottom();
   }
 }
 
@@ -61,6 +76,7 @@ onMounted(() => {
   taskStore.init();
 });
 </script>
+
 
 <template>
   <router-view v-if="isLanding" />
@@ -117,7 +133,7 @@ onMounted(() => {
         </header>
 
         <!-- Chat Logs -->
-        <div class="flex-1 overflow-y-auto p-4 space-y-4 flex flex-col justify-start">
+        <div ref="chatLogsContainer" class="flex-1 overflow-y-auto p-4 space-y-4 flex flex-col justify-start chat-scroll-container">
           <div
             v-for="(msg, index) in chatMessages"
             :key="index"

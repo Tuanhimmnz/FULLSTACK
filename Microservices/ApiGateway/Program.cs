@@ -74,6 +74,7 @@ app.Use(async (context, next) =>
     var path = context.Request.Path.Value ?? "";
     var publicPath = path.StartsWith("/api/auth/login", StringComparison.OrdinalIgnoreCase)
         || path.StartsWith("/api/auth/register", StringComparison.OrdinalIgnoreCase)
+        || path.StartsWith("/api/ai/landing-chat", StringComparison.OrdinalIgnoreCase)
         || path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase)
         || path.StartsWith("/health", StringComparison.OrdinalIgnoreCase);
 
@@ -190,6 +191,7 @@ static string? ResolveServiceKey(string upstreamPath)
         || upstreamPath.Contains("/api/diagnostics", StringComparison.OrdinalIgnoreCase)
         || upstreamPath.Contains("/api/activity-logs", StringComparison.OrdinalIgnoreCase)
         || upstreamPath.Contains("/api/internal", StringComparison.OrdinalIgnoreCase)
+        || upstreamPath.Contains("/api/ai", StringComparison.OrdinalIgnoreCase)
         || upstreamPath.Contains("/comments", StringComparison.OrdinalIgnoreCase))
     {
         return "NotifyService";

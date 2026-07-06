@@ -155,3 +155,101 @@ export function repairApiText<T>(value: T, key = ''): T {
 
   return value;
 }
+
+export function renderMarkdown(text?: string | null): string {
+  if (!text) return '';
+  
+  // Escape HTML to prevent XSS
+  let html = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+    
+  // Bold: **text** -> <strong>text</strong>
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  
+  // Italics: *text* -> <em>text</em>
+  html = html.replace(/\*(.*?)\*/g, '<em>$1</em>');
+  
+  // Code block: ```code```
+  html = html.replace(/```([\s\S]*?)```/g, '<pre class="bg-slate-900 text-emerald-400 p-3 rounded-xl font-mono text-[11px] overflow-x-auto my-2 border border-slate-800"><code>$1</code></pre>');
+  
+  // Inline code: `code`
+  html = html.replace(/`([^`]+)`/g, '<code class="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded font-mono text-xs text-rose-500 font-bold">$1</code>');
+  
+  // Split into lines for list processing
+  const lines = html.split('\n');
+  let inUl = false;
+  let inOl = false;
+  let resultLines: string[] = [];
+  
+  for (let line of lines) {
+    const trimmed = line.trim();
+    
+    // Unordered list item
+    const ulMatch = line.match(/^(\s*)([\*\-])\s+(.+)$/);
+    if (ulMatch) {
+      if (inOl) {
+        resultLines.push('</ol>');
+        inOl = false;
+      }
+      if (!inUl) {
+        resultLines.push('<ul class="list-disc pl-5 my-2 space-y-1">');
+        inUl = true;
+      }
+      resultLines.push(`<li>${ulMatch[3]}</li>`);
+      continue;
+    }
+    
+    // Ordered list item
+    const olMatch = line.match(/^(\s*)(\d+)\.\s+(.+)$/);
+    if (olMatch) {
+      if (inUl) {
+        resultLines.push('</ul>');
+        inUl = false;
+      }
+      if (!inOl) {
+        resultLines.push('<ol class="list-decimal pl-5 my-2 space-y-1">');
+        inOl = true;
+      }
+      resultLines.push(`<li>${olMatch[3]}</li>`);
+      continue;
+    }
+    
+    // Reset lists
+    if (trimmed === '' || (!ulMatch && !olMatch)) {
+      if (inUl) {
+        resultLines.push('</ul>');
+        inUl = false;
+      }
+      if (inOl) {
+        resultLines.push('</ol>');
+        inOl = false;
+      }
+    }
+    
+    if (trimmed !== '') {
+      if (!inUl && !inOl && !line.startsWith('<pre')) {
+        if (trimmed.startsWith('### ')) {
+          resultLines.push(`<h4 class="font-bold text-sm text-indigo-400 mt-3 mb-1">${trimmed.slice(4)}</h4>`);
+        } else if (trimmed.startsWith('## ')) {
+          resultLines.push(`<h3 class="font-bold text-base text-indigo-400 mt-4 mb-2">${trimmed.slice(3)}</h3>`);
+        } else if (trimmed.startsWith('# ')) {
+          resultLines.push(`<h2 class="font-black text-lg text-indigo-400 mt-5 mb-2">${trimmed.slice(2)}</h2>`);
+        } else {
+          resultLines.push(`<p class="my-1.5 leading-relaxed">${line}</p>`);
+        }
+      } else {
+        resultLines.push(line);
+      }
+    } else {
+      resultLines.push('');
+    }
+  }
+  
+  if (inUl) resultLines.push('</ul>');
+  if (inOl) resultLines.push('</ol>');
+  
+  return resultLines.join('\n');
+}
+

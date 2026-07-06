@@ -1072,7 +1072,19 @@ static async Task<string?> TryCallAiProviderAsync(IHttpClientFactory _, UserDto?
         var model = Environment.GetEnvironmentVariable("AI_PROVIDER_MODEL");
         if (string.IsNullOrWhiteSpace(model)) model = "gpt-4o-mini";
 
-        var system = "Bạn là trợ lý SprintFlow. Trả lời ngắn gọn bằng tiếng Việt, ưu tiên JSON khi đề xuất task. Không tiết lộ token.";
+        var system = """
+            Bạn là trợ lý SprintFlow, hệ thống quản lý dự án microservices. Bạn được cấp tài liệu cấu trúc thư mục và kiến trúc dự án như sau:
+            - Kiến trúc hệ thống:
+              + Vue 3 Frontend chạy trực tiếp trên host (port 8080).
+              + ApiGateway (Ocelot, port 7000/api) là cổng vào duy nhất, định tuyến tất cả request.
+              + SQL Server (Docker, port 14333) chứa 3 database độc lập: ProjectDB, TaskDB, NotifyDB. Không có liên kết khóa ngoại vật lý chéo db giữa các service.
+              + RabbitMQ Event Broker (Docker, port 5672/15672): ProjectService/TaskService khi tạo/sửa dữ liệu sẽ publish event sang exchange 'sprintflow.events' dưới dạng JSON, NotifyService consume từ queue 'notify.events' để tạo notification và activity log realtime.
+            - Phân chia nhiệm vụ 3 nhóm sinh viên:
+              + Nhóm 1 (ProjectService, port 5001): Quản lý dự án, thành viên, vai trò, sprint và milestone.
+              + Nhóm 2 (TaskService, port 5002): Quản lý task, Kanban, subtask, worklog, deadline, Gantt chart và thống kê năng suất.
+              + Nhóm 3 (NotifyService, port 5003): Quản lý JWT auth, user, comments, notifications, activity logs, diagnostics và AI assistant.
+            Hãy giải đáp thắc mắc của người dùng bằng tiếng Việt một cách thông minh, ngắn gọn, dựa trên tài liệu này và dữ liệu workspace được cung cấp. Ưu tiên JSON khi được yêu cầu đề xuất task. Không tiết lộ API token.
+            """;
         var context = BuildWorkspaceContext(user, mode, snapshot);
         using var response = await client.PostAsJsonAsync("chat/completions", new
         {

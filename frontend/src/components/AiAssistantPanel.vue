@@ -60,9 +60,7 @@
           <h3 class="text-sm font-black text-slate-950">Kết quả AI</h3>
           <Loader2 v-if="loading" class="size-4 animate-spin text-indigo-600" />
         </div>
-        <p class="mt-3 whitespace-pre-line rounded-2xl bg-slate-50 p-4 text-sm font-semibold leading-6 text-slate-600">
-          {{ answer || 'AI sẵn sàng hỗ trợ tóm tắt project, tạo checklist, gợi ý người phụ trách và sinh task từ mô tả tự nhiên.' }}
-        </p>
+        <div class="mt-3 rounded-2xl bg-slate-50 p-4 text-sm font-semibold leading-7 text-slate-700 markdown-content" v-html="renderMarkdown(answer || 'AI sẵn sàng hỗ trợ tóm tắt project, tạo checklist, gợi ý người phụ trách và sinh task từ mô tả tự nhiên.')"></div>
         <div v-if="draft" class="mt-3 rounded-2xl border border-indigo-100 bg-indigo-50 p-4">
           <p class="text-xs font-black uppercase tracking-wider text-indigo-500">Bản nháp task</p>
           <h4 class="mt-1 text-base font-black text-slate-950">{{ draft.title }}</h4>
@@ -91,6 +89,8 @@ import { computed, ref } from 'vue';
 import { Bot, CheckCircle2, ListPlus, Loader2, Send, Sparkles, Wand2 } from '@lucide/vue';
 import { apiService, type AiTaskSuggestion } from '../services/api';
 import { useTaskStore } from '../stores/taskStore';
+import { renderMarkdown } from '../utils/text';
+
 
 const taskStore = useTaskStore();
 const prompt = ref('Tóm tắt việc cần làm hôm nay và đề xuất 3 task tiếp theo cho SprintFlow.');

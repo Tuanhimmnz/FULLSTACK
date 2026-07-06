@@ -607,14 +607,20 @@
     </footer>
 
     <div class="landing-ai-widget">
-      <button type="button" class="landing-ai-toggle" @click="landingAiOpen = !landingAiOpen">
-        AI
+      <button type="button" class="landing-ai-toggle" @click="landingAiOpen = !landingAiOpen" title="Trợ lý AI giới thiệu hệ thống">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="display: block; margin: auto;">
+          <rect x="3" y="11" width="18" height="10" rx="2" />
+          <circle cx="12" cy="5" r="2" />
+          <path d="M12 7v4" />
+          <line x1="8" y1="16" x2="8" y2="16" />
+          <line x1="16" y1="16" x2="16" y2="16" />
+        </svg>
       </button>
       <div v-if="landingAiOpen" class="landing-ai-panel">
         <div>
           <p class="landing-ai-kicker">SprintFlow AI</p>
           <h3>Trợ lý giới thiệu hệ thống</h3>
-          <p class="landing-ai-answer">{{ landingAiAnswer }}</p>
+          <div class="landing-ai-answer" v-html="renderMarkdown(landingAiAnswer)"></div>
         </div>
         <div class="landing-ai-row">
           <input
@@ -636,6 +642,8 @@
 import Lenis from 'lenis'
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { apiService } from '../services/api'
+import { renderMarkdown } from '../utils/text'
+
 
 
 let lenis: any;
@@ -3539,10 +3547,44 @@ html, body {
 .landing-ai-answer {
   margin: 10px 0 14px;
   color: #cbd5e1;
-  font-size: 0.9rem;
+  font-size: 0.875rem;
   font-weight: 600;
-  line-height: 1.55;
+  line-height: 1.65;
+  max-height: 350px;
+  overflow-y: auto;
 }
+
+.landing-ai-answer strong {
+  color: #22d3ee;
+  font-weight: 900;
+}
+
+.landing-ai-answer ul {
+  list-style-type: disc;
+  margin: 8px 0 8px 18px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.landing-ai-answer ol {
+  list-style-type: decimal;
+  margin: 8px 0 8px 18px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.landing-ai-answer li {
+  margin: 0;
+}
+
+.landing-ai-answer p {
+  margin: 6px 0;
+}
+
 
 .landing-ai-row {
   display: grid;

@@ -1158,24 +1158,26 @@ static string BuildFallbackAiAnswer(UserDto? user, string mode, string? prompt, 
     var total = snapshot.Tasks.Count;
     var done = snapshot.Tasks.Count(task => task.Status == "Done");
     var overdue = snapshot.Tasks.Count(task => task.Status != "Done" && DateOnly.TryParse(task.DueDate, out var due) && due < DateOnly.FromDateTime(DateTime.Today));
-    var assignee = user?.FullName ?? "khach";
+    var assignee = user?.FullName ?? "khách";
 
-    if (mode == "landing")
+    var rateLimitWarning = "[⚠️ Hệ thống đang chạm giới hạn tần suất gọi AI (Gemini Rate Limit 429). Vui lòng đợi 10-15 giây rồi gửi lại câu hỏi].\n\nTóm tắt nhanh từ hệ thống:\n";
+
+    if (mode == "landing" || mode == "landing-chat")
     {
-        return "SprintFlow là hệ thống quản lý dự án microservices: ProjectService quản lý dự án, TaskService quản lý Kanban/task, NotifyService quản lý JWT, comment, activity log, notification và AI. Frontend chỉ gọi API Gateway.";
+        return rateLimitWarning + "- **SprintFlow** là hệ thống quản lý dự án microservices:\n  + **ProjectService** (Nhóm 1 - Port 5001): Quản lý dự án, thành viên, vai trò, sprint.\n  + **TaskService** (Nhóm 2 - Port 5002): Quản lý task, Kanban, Gantt chart.\n  + **NotifyService** (Nhóm 3 - Port 5003): Quản lý JWT, comment, notification, activity logs và tích hợp AI.\n  + **Gateway** (Ocelot - Port 7000): Cổng định tuyến duy nhất.";
     }
 
     if (mode == "meeting-to-tasks")
     {
-        return $"Đã tách nội dung họp thành các đầu việc ưu tiên cho {assignee}. Hãy kiểm tra deadline và người phụ trách trước khi bấm tạo task thật.";
+        return rateLimitWarning + $"- Đã phác thảo các đầu việc ưu tiên cho **{assignee}**. Hãy kiểm tra lại deadline và người phụ trách trên Kanban.";
     }
 
     if (mode == "suggest-tasks")
     {
-        return $"Workspace hiện có {total} task, {done} đã hoàn thành, {overdue} quá hạn. Ưu tiên tiếp theo là xử lý task quá hạn, bổ sung checklist và gán người phụ trách rõ ràng.";
+        return rateLimitWarning + $"- Workspace đang có **{total} task** (đã xong: {done}, quá hạn: {overdue}). Hãy giải quyết các task quá hạn trước.";
     }
 
-    return $"Xin chào {assignee}. Tôi đã đọc nhanh {snapshot.Projects.Count} project, {total} task, {snapshot.Users.Count} người dùng và {snapshot.ActivityLogs.Count} activity log. Câu hỏi của bạn: {prompt}";
+    return rateLimitWarning + $"- Chào **{assignee}**. Hệ thống ghi nhận có {snapshot.Projects.Count} project, {total} task, {snapshot.Users.Count} thành viên và {snapshot.ActivityLogs.Count} nhật ký hoạt động.\n- Câu hỏi của bạn: *{prompt}*";
 }
 
 static string BuildWorkspaceContext(UserDto? user, string mode, WorkspaceSnapshot snapshot)

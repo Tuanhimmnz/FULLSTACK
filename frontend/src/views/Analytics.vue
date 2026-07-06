@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { computed } from 'vue';
-import { AlertTriangle, BarChart3, CheckCircle2, Clock3, Crown, PieChart, Users } from '@lucide/vue';
+import { AlertTriangle, BarChart3, CheckCircle2, Clock3, Crown, Download, PieChart, Users } from '@lucide/vue';
 import { useTaskStore } from '../stores/taskStore';
 import { avatarFor, onAvatarError } from '../utils/avatar';
 import type { Task, User } from '../services/mockData';
+import { downloadCsv } from '../utils/csv';
 
 const taskStore = useTaskStore();
 
@@ -110,6 +111,18 @@ function workloadPercent(row: { active: number; overdue: number }) {
 function maxRoleTotal() {
   return Math.max(...roleWorkload.value.map(row => row.done + row.active + row.overdue), 1);
 }
+
+function exportAnalytics() {
+  downloadCsv(`sprintflow-analytics-${new Date().toISOString().slice(0, 10)}`, resourceRows.value, [
+    { key: 'user', header: 'Nhân sự', value: row => row.user.fullName },
+    { key: 'role', header: 'Vai trò', value: row => row.user.role },
+    { key: 'active', header: 'Đang xử lý' },
+    { key: 'overdue', header: 'Trễ hạn' },
+    { key: 'completed', header: 'Hoàn thành' },
+    { key: 'estimated', header: 'Ước lượng giờ' },
+    { key: 'logged', header: 'Đã log giờ' }
+  ]);
+}
 </script>
 
 <template>
@@ -126,9 +139,19 @@ function maxRoleTotal() {
             <p class="mt-1 text-sm font-semibold text-slate-500">Theo dõi tình trạng dự án, khối lượng nhân sự và năng suất từng vai trò.</p>
           </div>
         </div>
-        <router-link to="/tasks" class="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white transition hover:-translate-y-0.5">
-          Mở danh sách task
-        </router-link>
+        <div class="flex flex-col gap-2 sm:flex-row">
+          <button
+            type="button"
+            class="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm font-black text-emerald-700 transition hover:-translate-y-0.5 hover:bg-emerald-100"
+            @click="exportAnalytics"
+          >
+            <Download class="size-4" />
+            Tải báo cáo
+          </button>
+          <router-link to="/tasks" class="inline-flex items-center justify-center rounded-2xl bg-slate-950 px-5 py-3 text-sm font-black text-white transition hover:-translate-y-0.5">
+            Mở danh sách task
+          </router-link>
+        </div>
       </header>
 
       <section class="grid gap-4 md:grid-cols-3">

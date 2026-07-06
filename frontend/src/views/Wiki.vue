@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue';
-import { Edit3, FileText, Plus, Save, Search, Trash2, X } from '@lucide/vue';
+import { Download, Edit3, FileText, Plus, Save, Search, Trash2, X } from '@lucide/vue';
 import { useTaskStore } from '../stores/taskStore';
+import { downloadCsv } from '../utils/csv';
 
 interface ProjectDocument {
   id: string;
@@ -192,6 +193,18 @@ function deleteDocument(doc: ProjectDocument) {
   documents.value = documents.value.filter(item => item.id !== doc.id);
   saveDocuments();
 }
+
+function exportDocuments() {
+  downloadCsv(`sprintflow-wiki-${new Date().toISOString().slice(0, 10)}`, visibleDocuments.value, [
+    { key: 'title', header: 'Tiêu đề' },
+    { key: 'category', header: 'Danh mục' },
+    { key: 'projectId', header: 'Dự án', value: doc => projectName(doc.projectId) },
+    { key: 'authorId', header: 'Người viết', value: doc => authorName(doc.authorId) },
+    { key: 'createdAt', header: 'Ngày tạo', value: doc => formatDate(doc.createdAt) },
+    { key: 'updatedAt', header: 'Cập nhật', value: doc => formatDate(doc.updatedAt) },
+    { key: 'content', header: 'Nội dung' }
+  ]);
+}
 </script>
 
 <template>
@@ -224,6 +237,14 @@ function deleteDocument(doc: ProjectDocument) {
           >
             <Plus class="size-5" />
             Thêm tài liệu
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm font-black text-emerald-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-emerald-100"
+            @click="exportDocuments"
+          >
+            <Download class="size-5" />
+            Tải CSV
           </button>
         </div>
       </header>

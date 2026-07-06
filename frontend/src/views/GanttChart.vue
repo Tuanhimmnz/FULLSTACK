@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
-import { CalendarRange, ChevronDown, UserRound } from '@lucide/vue';
+import { CalendarRange, ChevronDown, Download, UserRound } from '@lucide/vue';
 import { useTaskStore } from '../stores/taskStore';
 import TaskDetailModal from '../components/TaskDetailModal.vue';
 import { avatarFor, onAvatarError } from '../utils/avatar';
 import type { Task } from '../services/mockData';
+import { downloadCsv } from '../utils/csv';
 
 const taskStore = useTaskStore();
 const selectedProjectId = ref('all');
@@ -133,6 +134,18 @@ function openTask(task: Task) {
   selectedTaskId.value = task.id;
   isDetailOpen.value = true;
 }
+
+function exportTimeline() {
+  downloadCsv(`sprintflow-gantt-${new Date().toISOString().slice(0, 10)}`, filteredTasks.value, [
+    { key: 'title', header: 'Công việc' },
+    { key: 'projectId', header: 'Dự án', value: task => taskStore.projects.find(project => project.id === task.projectId)?.name || 'Dự án khác' },
+    { key: 'createdAt', header: 'Ngày bắt đầu', value: task => toDate(task.createdAt).toLocaleDateString('vi-VN') },
+    { key: 'dueDate', header: 'Hạn hoàn thành' },
+    { key: 'status', header: 'Trạng thái' },
+    { key: 'priority', header: 'Ưu tiên' },
+    { key: 'assigneeId', header: 'Người phụ trách', value: task => getAssignee(task)?.fullName || 'Chưa phân công' }
+  ]);
+}
 </script>
 
 <template>
@@ -180,6 +193,15 @@ function openTask(task: Task) {
               Tuần
             </button>
           </div>
+
+          <button
+            type="button"
+            class="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-xs font-black text-emerald-700 transition hover:bg-emerald-100"
+            @click="exportTimeline"
+          >
+            <Download class="size-4" />
+            Tải CSV
+          </button>
         </div>
       </header>
 

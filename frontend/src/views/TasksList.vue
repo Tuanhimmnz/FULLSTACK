@@ -61,6 +61,15 @@
 
           <button
             type="button"
+            class="inline-flex h-12 items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 text-sm font-black text-emerald-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-emerald-100"
+            @click="exportTasks"
+          >
+            <Download class="size-4" />
+            Tải CSV
+          </button>
+
+          <button
+            type="button"
             class="flex size-12 items-center justify-center rounded-2xl border border-white/80 bg-white/80 text-slate-400 shadow-sm transition hover:text-slate-950"
             title="Tùy chọn"
           >
@@ -306,6 +315,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Clock,
+  Download,
   Gauge,
   Kanban as KanbanIcon,
   LayoutGrid,
@@ -323,6 +333,7 @@ import TaskDetailModal from '../components/TaskDetailModal.vue';
 import QuickTaskModal from '../components/QuickTaskModal.vue';
 import type { Task, User as SprintUser } from '../services/mockData';
 import { avatarFor, onAvatarError } from '../utils/avatar';
+import { downloadCsv } from '../utils/csv';
 
 type TaskStatus = Task['status'];
 
@@ -409,6 +420,21 @@ const timelineDays = computed(() => {
 
 function tasksByStatus(status: TaskStatus) {
   return filteredTasks.value.filter(task => task.status === status);
+}
+
+function exportTasks() {
+  downloadCsv(`sprintflow-tasks-${new Date().toISOString().slice(0, 10)}`, filteredTasks.value, [
+    { key: 'title', header: 'Công việc' },
+    { key: 'description', header: 'Mô tả' },
+    { key: 'projectId', header: 'Dự án', value: task => projectName(task.projectId) },
+    { key: 'status', header: 'Trạng thái' },
+    { key: 'priority', header: 'Ưu tiên', value: task => priorityLabel(task.priority) },
+    { key: 'progress', header: 'Tiến độ', value: task => `${taskProgress(task)}%` },
+    { key: 'subTasks', header: 'Checklist', value: task => `${completedSubtasks(task)}/${task.subTasks?.length || 0}` },
+    { key: 'assigneeId', header: 'Người phụ trách', value: task => assignees(task).map(user => user.fullName).join('; ') },
+    { key: 'dueDate', header: 'Hạn' },
+    { key: 'labels', header: 'Nhãn', value: task => (task.labels || []).join('; ') }
+  ]);
 }
 
 function getTasksForDate(date: string) {

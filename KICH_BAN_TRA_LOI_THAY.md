@@ -59,8 +59,9 @@ Task Detail có subtask, worklog, comment, tag thành viên, activity timeline v
 Gantt hiển thị tiến độ theo thời gian, lọc theo project và mở chi tiết task.
 Analytics thống kê trạng thái, workload, người quá tải và bảng xếp hạng năng suất.
 Wiki lưu tài liệu dự án, API specs, checklist triển khai và ghi chú họp.
-Admin quản lý người dùng, tài khoản demo, vai trò và đổi mật khẩu.
-Notifications có lọc all/unread/read, mark read, mark all read và delete.
+Admin quản lý người dùng, tài khoản demo, vai trò, đổi mật khẩu, import nhân viên hàng loạt từ file CSV/Excel và xuất danh sách tài khoản.
+Notifications có lọc all/unread/read, mark read, mark all read, delete và xuất file CSV.
+Các trang Projects, Kanban, My Task, Gantt, Analytics, Wiki, Notifications, Activity Log đều có nút tải dữ liệu để lưu trữ.
 Diagnostics kiểm tra Gateway, ProjectService, TaskService, NotifyService và route table.
 ```
 

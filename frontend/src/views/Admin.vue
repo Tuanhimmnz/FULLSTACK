@@ -258,6 +258,37 @@
           >
             Tải lại tài khoản
           </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-black text-emerald-700 transition hover:bg-emerald-100"
+            @click="downloadUserTemplate"
+          >
+            <FileSpreadsheet class="size-4" />
+            Mẫu Excel
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-black text-blue-700 transition hover:bg-blue-100"
+            @click="userImportInput?.click()"
+          >
+            <Upload class="size-4" />
+            Import nhân viên
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-black text-white transition hover:bg-slate-800"
+            @click="exportUserAccounts"
+          >
+            <Download class="size-4" />
+            Xuất tài khoản
+          </button>
+          <input
+            ref="userImportInput"
+            type="file"
+            accept=".csv,text/csv"
+            class="hidden"
+            @change="handleUserImport"
+          />
         </div>
 
         <div class="overflow-x-auto">
@@ -568,11 +599,15 @@ import {
   Plus,
   UserMinus,
   X,
-  FolderPlus
+  FolderPlus,
+  Download,
+  Upload,
+  FileSpreadsheet
 } from '@lucide/vue';
 import { useTaskStore } from '../stores/taskStore';
 import { avatarFor, onAvatarError } from '../utils/avatar';
-import type { Project, User } from '../services/mockData';
+import { downloadCsv, readCsvFile } from '../utils/csv';
+import type { Project, User, UserCredential } from '../services/mockData';
 
 const taskStore = useTaskStore();
 const router = useRouter();
@@ -587,6 +622,7 @@ const userSearch = ref('');
 const userPage = ref(1);
 const usersPageSize = ref(8);
 const editingUserId = ref('');
+const userImportInput = ref<HTMLInputElement | null>(null);
 const resetPasswords = reactive<Record<string, string>>({});
 const userEditForm = reactive({
   fullName: '',
@@ -695,6 +731,71 @@ watch([userSearch, usersPageSize], () => {
 watch(totalUserPages, (pages) => {
   if (userPage.value > pages) userPage.value = pages;
 });
+
+function exportUserAccounts() {
+  const rows = taskStore.users.map(user => {
+    const credential = credentialsById.value[user.id] as UserCredential | undefined;
+    return {
+      id: user.id,
+      fullName: user.fullName,
+      email: user.email || credential?.email || '',
+      role: user.role,
+      password: credential?.password || defaultPassword(user.email),
+      status: user.isOnline ? 'Online' : 'Offline'
+    };
+  });
+
+  downloadCsv(`sprintflow-users-${new Date().toISOString().slice(0, 10)}`, rows, [
+    { key: 'id', header: 'ID' },
+    { key: 'fullName', header: 'Họ tên' },
+    { key: 'email', header: 'Email đăng nhập' },
+    { key: 'role', header: 'Vai trò' },
+    { key: 'password', header: 'Mật khẩu demo' },
+    { key: 'status', header: 'Trạng thái' }
+  ]);
+}
+
+function downloadUserTemplate() {
+  downloadCsv('mau-import-nhan-vien-sprintflow', [
+    { fullName: 'Nguyễn Văn Developer', email: 'dev01@sprintflow.local', role: 'Developer', password: 'Dev@123456', isOnline: 'TRUE' },
+    { fullName: 'Trần Thị QA', email: 'qa01@sprintflow.local', role: 'QA Engineer', password: 'QA@123456', isOnline: 'TRUE' },
+    { fullName: 'Lê Minh Viewer', email: 'viewer01@sprintflow.local', role: 'Viewer', password: 'Viewer@123456', isOnline: 'FALSE' }
+  ], [
+    { key: 'fullName', header: 'fullName' },
+    { key: 'email', header: 'email' },
+    { key: 'role', header: 'role' },
+    { key: 'password', header: 'password' },
+    { key: 'isOnline', header: 'isOnline' }
+  ]);
+}
+
+function truthy(value: string) {
+  return ['1', 'true', 'yes', 'online', 'trực tuyến', 'x'].includes(value.trim().toLowerCase());
+}
+
+async function handleUserImport(event: Event) {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  if (!file) return;
+
+  try {
+    const records = await readCsvFile(file);
+    const rows = records.map(record => ({
+      fullName: record.fullName || record['Họ tên'] || record['Ho ten'] || record.name || '',
+      email: record.email || record.Email || record['Email đăng nhập'] || '',
+      role: record.role || record['Vai trò'] || record['Vai tro'] || 'Member',
+      password: record.password || record['Mật khẩu'] || record['Mat khau'] || '123456',
+      isOnline: record.isOnline ? truthy(record.isOnline) : true
+    }));
+
+    const result = await taskStore.importUsers(rows);
+    alert(`Import hoàn tất: ${result.created.length} tạo mới, ${result.updated.length} cập nhật, ${result.skipped.length} bỏ qua.`);
+  } catch (error) {
+    alert(error instanceof Error ? error.message : 'Không đọc được file import.');
+  } finally {
+    input.value = '';
+  }
+}
 
 function defaultPassword(email?: string) {
   return email === 'admin@projecthub.com' ? 'admin123' : '123456';

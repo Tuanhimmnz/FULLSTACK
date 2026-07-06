@@ -17,6 +17,14 @@
           <FolderPlus class="h-4 w-4" />
           <span>Tạo dự án</span>
         </button>
+        <button
+          type="button"
+          @click="exportProjects"
+          class="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-3 text-xs font-black text-slate-700 shadow-sm transition hover:bg-slate-50"
+        >
+          <Download class="h-4 w-4" />
+          <span>Tải về Excel</span>
+        </button>
       </div>
     </header>
 
@@ -127,6 +135,14 @@
                 >
                   Mở Kanban
                 </router-link>
+                <button
+                  v-if="isManager"
+                  type="button"
+                  class="rounded-xl border border-orange-200 bg-orange-50 px-4 py-3 text-xs font-black text-orange-700 transition hover:bg-orange-100"
+                  @click="openEditProject(selectedProject)"
+                >
+                  Đổi tên / Sửa dự án
+                </button>
               </div>
 
               <div class="mt-6 grid gap-3 sm:grid-cols-3">
@@ -225,6 +241,55 @@
       </section>
     </main>
 
+    <div v-if="isEditOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-6 backdrop-blur-sm">
+      <form class="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl" @submit.prevent="saveProjectEdit">
+        <div class="flex items-start justify-between">
+          <div>
+            <h2 class="text-xl font-black text-slate-950">Đổi tên / Sửa dự án</h2>
+            <p class="mt-1 text-sm text-slate-500">Cập nhật tên, mô tả, trạng thái và màu nhận diện dự án.</p>
+          </div>
+          <button type="button" @click="isEditOpen = false" class="rounded-lg p-2 text-slate-400 hover:bg-slate-100 hover:text-slate-700">
+            <X class="h-5 w-5" />
+          </button>
+        </div>
+
+        <div class="mt-5 grid gap-4 sm:grid-cols-2">
+          <input v-model="editProjectForm.name" required class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold outline-none focus:border-orange-500 focus:bg-white" placeholder="Tên dự án" />
+          <select v-model="editProjectForm.status" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold outline-none focus:border-orange-500 focus:bg-white">
+            <option value="New">Mới</option>
+            <option value="Active">Đang thực hiện</option>
+            <option value="OnHold">Tạm dừng</option>
+            <option value="Completed">Hoàn thành</option>
+          </select>
+          <textarea v-model="editProjectForm.description" required rows="4" class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-semibold outline-none focus:border-orange-500 focus:bg-white sm:col-span-2" placeholder="Mô tả dự án"></textarea>
+        </div>
+
+        <div class="mt-5">
+          <p class="text-xs font-black uppercase text-slate-500">Màu nhận diện</p>
+          <div class="mt-2 flex gap-2">
+            <button
+              v-for="color in projectColors"
+              :key="color"
+              type="button"
+              @click="editProjectForm.color = color"
+              class="h-9 w-9 rounded-xl border-2 transition"
+              :class="[projectTheme(color).solid, editProjectForm.color === color ? 'border-slate-950 scale-110' : 'border-white']"
+              :title="color"
+            ></button>
+          </div>
+        </div>
+
+        <div class="mt-6 flex justify-end gap-3">
+          <button type="button" @click="isEditOpen = false" class="rounded-xl border border-slate-200 px-4 py-3 text-xs font-black text-slate-600 hover:bg-slate-50">
+            Hủy
+          </button>
+          <button class="rounded-xl bg-orange-600 px-5 py-3 text-xs font-black text-white hover:bg-orange-700">
+            Lưu thay đổi
+          </button>
+        </div>
+      </form>
+    </div>
+
     <div v-if="isCreateOpen" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-6 backdrop-blur-sm">
       <form class="w-full max-w-2xl rounded-2xl bg-white p-6 shadow-2xl" @submit.prevent="createProject">
         <div class="flex items-start justify-between">
@@ -294,16 +359,19 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
-import { ClipboardList, FolderKanban, FolderPlus, Search, X } from '@lucide/vue';
+import { ClipboardList, Download, FolderKanban, FolderPlus, Search, X } from '@lucide/vue';
 import { useTaskStore } from '../stores/taskStore';
 import type { Project, Task } from '../services/mockData';
 import { avatarFor, onAvatarError } from '../utils/avatar';
+import { downloadCsv } from '../utils/csv';
 
 const taskStore = useTaskStore();
 const searchQuery = ref('');
 const selectedProjectId = ref('');
 const selectedMemberIds = ref<string[]>([]);
 const isCreateOpen = ref(false);
+const isEditOpen = ref(false);
+const editingProjectId = ref('');
 
 const projectColors = ['orange', 'teal', 'blue', 'rose', 'violet', 'emerald'];
 
@@ -313,6 +381,13 @@ const projectForm = reactive({
   status: 'Active' as Project['status'],
   color: 'orange',
   members: [] as string[]
+});
+
+const editProjectForm = reactive({
+  name: '',
+  description: '',
+  status: 'Active' as Project['status'],
+  color: 'orange'
 });
 
 const isManager = computed(() => ['Admin', 'Project Manager'].includes(taskStore.currentUser.role));
@@ -349,6 +424,30 @@ function progressFor(projectId: string) {
   return taskStore.getProjectProgress(projectId);
 }
 
+function exportProjects() {
+  const rows = filteredProjects.value.map(project => ({
+    id: project.id,
+    name: project.name,
+    description: project.description,
+    status: project.statusText || statusText(project.status),
+    progress: progressFor(project.id),
+    tasks: tasksByProject(project.id).length,
+    members: project.members.map(member => member.fullName).join(', '),
+    createdAt: project.createdAt
+  }));
+
+  downloadCsv(`sprintflow-projects-${new Date().toISOString().slice(0, 10)}`, rows, [
+    { key: 'id', header: 'ID' },
+    { key: 'name', header: 'Tên dự án' },
+    { key: 'description', header: 'Mô tả' },
+    { key: 'status', header: 'Trạng thái' },
+    { key: 'progress', header: 'Tiến độ (%)' },
+    { key: 'tasks', header: 'Số task' },
+    { key: 'members', header: 'Thành viên' },
+    { key: 'createdAt', header: 'Ngày tạo' }
+  ]);
+}
+
 function assigneeNames(assigneeId?: string) {
   if (!assigneeId) return 'Chưa phân công';
   return assigneeId
@@ -382,6 +481,28 @@ async function createProject() {
     members: []
   });
   isCreateOpen.value = false;
+}
+
+function openEditProject(project: Project) {
+  editingProjectId.value = project.id;
+  editProjectForm.name = project.name;
+  editProjectForm.description = project.description;
+  editProjectForm.status = project.status;
+  editProjectForm.color = project.color || 'orange';
+  isEditOpen.value = true;
+}
+
+async function saveProjectEdit() {
+  if (!editingProjectId.value) return;
+  const updated = await taskStore.updateProject(editingProjectId.value, {
+    name: editProjectForm.name.trim(),
+    description: editProjectForm.description.trim(),
+    status: editProjectForm.status,
+    statusText: statusText(editProjectForm.status),
+    color: editProjectForm.color
+  });
+  selectedProjectId.value = updated.id;
+  isEditOpen.value = false;
 }
 
 function statusText(status: Project['status']) {

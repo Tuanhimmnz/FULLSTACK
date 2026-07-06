@@ -75,8 +75,10 @@ viewer02@projecthub.com   / 123456     Viewer
 9. Vào Thống kê, trình bày workload, task trễ hạn, task hoàn thành và bảng năng suất.
 10. Vào Tài liệu, tạo một tài liệu API hoặc biên bản họp.
 11. Vào Quản trị, xem danh sách tài khoản demo, đổi vai trò hoặc đổi mật khẩu user.
-12. Vào Thông báo, lọc unread/read, mark read, mark all read và delete.
-13. Vào Cài đặt/Diagnostics để chứng minh Gateway và 3 service đều OK.
+12. Trong Quản trị, bấm `Mẫu Excel`, import nhân viên từ CSV và bấm `Xuất tài khoản`.
+13. Ở Projects, Kanban, My Task, Gantt, Analytics, Wiki, Notifications, Activity Log bấm nút tải CSV để chứng minh có xuất dữ liệu.
+14. Vào Thông báo, lọc unread/read, mark read, mark all read và delete.
+15. Vào Cài đặt/Diagnostics để chứng minh Gateway và 3 service đều OK.
 
 ## 5. Checklist F12
 
@@ -137,7 +139,16 @@ Trình bày NotifyService và Gateway: JWT auth, user management, comment, notif
 activity log, diagnostics và chứng minh F12 chỉ gọi Gateway.
 ```
 
-## 8. Câu nói chốt khi thầy hỏi
+## 8. Import/export dữ liệu
+
+```text
+Admin có chức năng import nhân viên hàng loạt bằng file CSV mở được bằng Excel.
+Nút Mẫu Excel tải file mẫu gồm fullName, email, role, password, isOnline.
+Nút Xuất tài khoản tải danh sách user, email, role và mật khẩu demo.
+Các trang dữ liệu chính đều có nút tải CSV: Projects, Kanban, My Task, Gantt, Analytics, Wiki, Notifications và Activity Log.
+```
+
+## 9. Câu nói chốt khi thầy hỏi
 
 ```text
 Bọn em tách đúng 3 service backend chạy Docker, frontend VueJS chạy trực tiếp trên host.

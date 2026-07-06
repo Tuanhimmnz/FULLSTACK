@@ -181,15 +181,16 @@ Thêm comment thành công
 
 ```text
 Dashboard: xem thống kê, tìm kiếm task/project, burndown chart, notification popup.
-Projects: xem project, thành viên, tiến độ, quản lý member.
-Tasks: lọc, tìm kiếm, phân trang, mở chi tiết task.
-Kanban: đổi trạng thái task theo cột.
-Tiến độ (Gantt): xem timeline task theo ngày/tuần, lọc theo project, mở chi tiết task.
-Thống kê: xem workload theo vai trò, phân bổ trạng thái, leaderboard năng suất.
-Tài liệu: lưu yêu cầu, API spec, checklist deploy, biên bản họp theo từng project.
+Projects: xem project, thành viên, tiến độ, quản lý member, đổi tên/sửa dự án và xuất CSV.
+Tasks: lọc, tìm kiếm, phân trang, mở chi tiết task và xuất CSV theo filter.
+Kanban: đổi trạng thái task theo cột, mở board detail và xuất CSV.
+Tiến độ (Gantt): xem timeline task theo ngày/tuần, lọc theo project, mở chi tiết task và xuất CSV.
+Thống kê: xem workload theo vai trò, phân bổ trạng thái, leaderboard năng suất và tải báo cáo.
+Tài liệu: lưu yêu cầu, API spec, checklist deploy, biên bản họp theo từng project và xuất CSV.
 Task Detail: tick subtask, hoàn thành toàn bộ subtask, log giờ, comment, @mention.
-Admin: xem thống kê người dùng, danh sách tài khoản có phân trang, sửa hồ sơ, đổi role, xem mật khẩu demo, reset mật khẩu.
-Notifications: lọc all/unread/read, mark read, mark all read, delete.
+Admin: xem thống kê người dùng, danh sách tài khoản có phân trang, sửa hồ sơ, đổi role, xem mật khẩu demo, reset mật khẩu, tải mẫu Excel, import nhân viên hàng loạt và xuất tài khoản.
+Notifications: lọc all/unread/read, mark read, mark all read, delete và xuất CSV.
+Activity Log: xem toàn bộ nhật ký nhóm 3 và xuất CSV để lưu bằng chứng event.
 Settings/Diagnostics: kiểm tra Gateway và 3 service.
 ```
 

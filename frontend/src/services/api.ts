@@ -106,6 +106,19 @@ export const apiService = {
     return response.data;
   },
 
+  async updateProject(projectId: string, project: Partial<Pick<Project, 'name' | 'description' | 'status' | 'statusText' | 'color'>>): Promise<Project> {
+    if (USE_MOCK) {
+      const projs = mockStorage.getProjects();
+      const existing = projs.find(item => item.id === projectId);
+      if (!existing) return Promise.reject(new Error('Project not found'));
+      Object.assign(existing, project);
+      mockStorage.saveProjects(projs);
+      return Promise.resolve(existing);
+    }
+    const response = await apiClient.put<Project>(`/projects/${projectId}`, project);
+    return response.data;
+  },
+
   // --- TASK API (CRUD) ---
   async getTasks(): Promise<Task[]> {
     if (USE_MOCK) {
@@ -509,8 +522,12 @@ export const apiService = {
         fullName: userData.fullName,
         role: userData.role || 'Member',
         avatarUrl: `https://ui-avatars.com/api/?name=${encodeURIComponent(userData.fullName)}&background=6366f1&color=fff`,
-        isOnline: true
+        isOnline: true,
+        email: userData.email
       };
+      const users = mockStorage.getUsers();
+      users.push(newUser);
+      mockStorage.saveUsers(users);
       return Promise.resolve({ user: newUser, token: 'mock-token-' + newUser.id });
     }
     const response = await apiClient.post('/auth/register', userData);

@@ -11,6 +11,14 @@
       <div class="flex items-center space-x-2">
         <button
           type="button"
+          @click="exportNotifications"
+          class="h-9 px-3 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs font-bold flex items-center space-x-1.5 transition-colors"
+        >
+          <Download class="w-3.5 h-3.5" />
+          <span>Tải CSV</span>
+        </button>
+        <button
+          type="button"
           @click="refresh"
           class="h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-indigo-600 hover:border-indigo-200 text-xs font-bold flex items-center space-x-1.5 transition-colors"
         >
@@ -119,8 +127,9 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { Bell, CheckCheck, ClipboardCheck, Inbox, MessageSquare, RefreshCw, Trash2, UserPlus } from '@lucide/vue';
+import { Bell, CheckCheck, ClipboardCheck, Download, Inbox, MessageSquare, RefreshCw, Trash2, UserPlus } from '@lucide/vue';
 import { useTaskStore } from '../stores/taskStore';
+import { downloadCsv } from '../utils/csv';
 
 const taskStore = useTaskStore();
 const activeFilter = ref<'all' | 'unread' | 'read'>('all');
@@ -151,6 +160,18 @@ function refresh() {
 
 async function markAllRead() {
   await taskStore.markAllNotificationsRead();
+}
+
+function exportNotifications() {
+  downloadCsv(`sprintflow-notifications-${new Date().toISOString().slice(0, 10)}`, filteredNotifications.value, [
+    { key: 'title', header: 'Tiêu đề' },
+    { key: 'message', header: 'Nội dung' },
+    { key: 'type', header: 'Loại event' },
+    { key: 'actorName', header: 'Người tạo' },
+    { key: 'isRead', header: 'Trạng thái', value: notification => notification.isRead ? 'Đã đọc' : 'Chưa đọc' },
+    { key: 'taskId', header: 'Task', value: notification => notification.taskId ? getTaskTitle(notification.taskId) : '' },
+    { key: 'createdAt', header: 'Thời gian', value: notification => formatDate(notification.createdAt) }
+  ]);
 }
 
 function getTaskTitle(taskId: string) {

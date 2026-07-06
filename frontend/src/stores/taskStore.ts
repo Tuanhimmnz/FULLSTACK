@@ -624,6 +624,27 @@ export const useTaskStore = defineStore('taskStore', () => {
     }
   }
 
+  async function updateProject(projectId: string, data: Partial<Pick<Project, 'name' | 'description' | 'status' | 'statusText' | 'color'>>) {
+    try {
+      const existing = projects.value.find(project => project.id === projectId);
+      if (!existing) throw new Error('Project not found');
+      const updated = normalizeProject(await apiService.updateProject(projectId, {
+        name: data.name ?? existing.name,
+        description: data.description ?? existing.description,
+        status: data.status ?? existing.status,
+        statusText: data.statusText ?? existing.statusText,
+        color: data.color ?? existing.color
+      }));
+      const index = projects.value.findIndex(project => project.id === projectId);
+      if (index !== -1) projects.value[index] = updated;
+      triggerToast('project.updated', `Đã cập nhật dự án ${updated.name}.`);
+      return updated;
+    } catch (error) {
+      console.error('Failed to update project:', error);
+      throw error;
+    }
+  }
+
   async function updateProjectMembers(projectId: string, memberIds: string[]) {
     try {
       await apiService.updateProjectMembers(projectId, memberIds);
@@ -704,6 +725,59 @@ export const useTaskStore = defineStore('taskStore', () => {
     const credential = userCredentials.value.find(item => item.id === userId);
     if (credential) credential.password = newPassword;
     triggerToast('user.password.reset', 'Admin đã đặt lại mật khẩu người dùng.');
+  }
+
+  async function importUsers(rows: Array<{ fullName: string; email: string; role: string; password: string; isOnline?: boolean }>) {
+    const created: User[] = [];
+    const updated: User[] = [];
+    const skipped: Array<{ email: string; reason: string }> = [];
+
+    for (const row of rows) {
+      const fullName = row.fullName.trim();
+      const email = row.email.trim().toLowerCase();
+      const password = row.password.trim() || '123456';
+      const role = row.role.trim() || 'Member';
+      const isOnline = row.isOnline ?? true;
+
+      if (!fullName || !email.includes('@')) {
+        skipped.push({ email: email || fullName || '(trống)', reason: 'Thiếu họ tên hoặc email không hợp lệ' });
+        continue;
+      }
+
+      const existing = users.value.find(user => (user.email || '').toLowerCase() === email);
+      try {
+        if (existing) {
+          const user = await updateUserProfileByAdmin(existing.id, {
+            fullName,
+            email,
+            role,
+            isOnline,
+            avatarUrl: existing.avatarUrl
+          });
+          if (password) await resetUserPassword(existing.id, password);
+          updated.push(user);
+          continue;
+        }
+
+        const { user } = await apiService.register({ fullName, email, password, role });
+        const normalized = normalizeUser(user);
+        if (!users.value.some(item => item.id === normalized.id)) users.value.push(normalized);
+        userCredentials.value.push({
+          id: normalized.id,
+          fullName: normalized.fullName,
+          email: normalized.email || email,
+          role: normalized.role,
+          password
+        });
+        created.push(normalized);
+      } catch (error) {
+        skipped.push({ email, reason: error instanceof Error ? error.message : 'Không import được' });
+      }
+    }
+
+    await refreshUserCredentials();
+    triggerToast('users.imported', `Import xong: ${created.length} tạo mới, ${updated.length} cập nhật, ${skipped.length} bỏ qua.`);
+    return { created, updated, skipped };
   }
 
   // --- N2 ASYNC ACTIONS ---
@@ -798,11 +872,13 @@ export const useTaskStore = defineStore('taskStore', () => {
     refreshActivityLogs,
     createSelfNotification,
     addProject,
+    updateProject,
     updateProjectMembers,
     updateUserRole,
     updateUserProfileByAdmin,
     refreshUserCredentials,
     resetUserPassword,
+    importUsers,
     updateProfile,
     changePassword,
     

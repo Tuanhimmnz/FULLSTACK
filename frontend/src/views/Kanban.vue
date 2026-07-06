@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue';
-import { CalendarDays, CheckCircle2, Gauge, Plus, Search, Users } from '@lucide/vue';
+import { CalendarDays, CheckCircle2, Download, Gauge, Plus, Search, Users } from '@lucide/vue';
 import type { Task } from '../services/mockData';
 import { useTaskStore } from '../stores/taskStore';
 import TaskCard from '../components/TaskCard.vue';
 import QuickTaskModal from '../components/QuickTaskModal.vue';
 import TaskDetailModal from '../components/TaskDetailModal.vue';
+import { downloadCsv } from '../utils/csv';
 
 const taskStore = useTaskStore();
 
@@ -97,6 +98,18 @@ function openTaskDetails(taskId: string) {
 function focusTask(taskId: string) {
   activeTaskId.value = taskId;
 }
+
+function exportBoard() {
+  downloadCsv(`sprintflow-kanban-${new Date().toISOString().slice(0, 10)}`, filteredTasks.value, [
+    { key: 'title', header: 'Công việc' },
+    { key: 'description', header: 'Mô tả' },
+    { key: 'projectId', header: 'Dự án', value: task => taskStore.projects.find(project => project.id === task.projectId)?.name || 'Dự án khác' },
+    { key: 'status', header: 'Cột Kanban', value: task => columns.find(column => column.status === task.status)?.name || task.status },
+    { key: 'priority', header: 'Ưu tiên' },
+    { key: 'dueDate', header: 'Hạn' },
+    { key: 'assigneeId', header: 'Người phụ trách', value: task => (task.assigneeId || '').split(',').map(id => taskStore.users.find(user => user.id === id.trim())?.fullName).filter(Boolean).join('; ') }
+  ]);
+}
 </script>
 
 <template>
@@ -140,6 +153,15 @@ function focusTask(taskId: string) {
           >
             <Plus class="size-5" />
             Tạo công việc
+          </button>
+
+          <button
+            type="button"
+            class="inline-flex items-center justify-center gap-2 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-3 text-sm font-black text-emerald-700 shadow-sm transition hover:-translate-y-0.5 hover:bg-emerald-100"
+            @click="exportBoard"
+          >
+            <Download class="size-5" />
+            Tải CSV
           </button>
         </div>
       </div>

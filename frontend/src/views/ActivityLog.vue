@@ -22,6 +22,13 @@
             />
           </div>
           <button
+            @click="exportLogs"
+            class="h-9 px-3 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 text-xs font-bold flex items-center gap-1.5 transition-colors"
+          >
+            <Download class="w-3.5 h-3.5" />
+            Tải CSV
+          </button>
+          <button
             @click="load"
             class="h-9 px-3 rounded-lg border border-slate-200 bg-white text-slate-600 hover:text-indigo-600 hover:border-indigo-200 text-xs font-bold flex items-center gap-1.5 transition-colors"
           >
@@ -107,10 +114,11 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue';
-import { ClipboardList, RefreshCw, Search, MessageSquare, UserPlus, CheckCircle } from '@lucide/vue';
+import { ClipboardList, Download, RefreshCw, Search, MessageSquare, UserPlus, CheckCircle } from '@lucide/vue';
 import ActivityLogTimeline from '../components/ActivityLogTimeline.vue';
 import { apiService } from '../services/api';
 import type { ActivityLog } from '../services/mockData';
+import { downloadCsv } from '../utils/csv';
 
 const loading = ref(false);
 const taskIdFilter = ref('');
@@ -192,6 +200,18 @@ async function load() {
   } finally {
     loading.value = false;
   }
+}
+
+function exportLogs() {
+  downloadCsv(`sprintflow-activity-logs-${new Date().toISOString().slice(0, 10)}`, filteredLogs.value, [
+    { key: 'createdAt', header: 'Thời gian', value: log => new Date(log.createdAt).toLocaleString('vi-VN') },
+    { key: 'userName', header: 'Người thao tác' },
+    { key: 'action', header: 'Hành động' },
+    { key: 'message', header: 'Nội dung' },
+    { key: 'entityType', header: 'Đối tượng' },
+    { key: 'taskId', header: 'Task ID' },
+    { key: 'entityId', header: 'Entity ID' }
+  ]);
 }
 
 onMounted(load);
